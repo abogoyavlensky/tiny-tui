@@ -1,6 +1,6 @@
 # tiny-tui
 
-A basic let-go application.
+A minimal TUI toolkit for let-go.
 
 ## Development
 
