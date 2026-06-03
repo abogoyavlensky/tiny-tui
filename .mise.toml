@@ -1,0 +1,10 @@
+# .mise.toml
+[tools]
+lg = "1.8.0"
+lgx = "0.1.0-alpha7"
+cljfmt = "0.16.4"
+
+[tool_alias]
+lg = "github:nooga/let-go"
+lgx = "github:abogoyavlensky/lgx"
+cljfmt = "asdf:https://github.com/b-social/asdf-cljfmt"

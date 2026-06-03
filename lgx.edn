@@ -1,0 +1,6 @@
+{:paths ["src"]
+ :main "main.lg"
+ :targets {:bin {:out "bin/tiny-tui"}}
+ :deps {}
+ :tasks {:fmt {:doc "Format source files"
+               :do [{:sh "cljfmt fix"}]}}}

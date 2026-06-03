@@ -1,0 +1,10 @@
+(ns tiny-tui.main
+  (:require [tiny-tui.greeter :as greeter]))
+
+(defn- main []
+  (prn (greeter/greet "let-go")))
+
+; Top-level forms run during AOT compilation too. Guard so `lg -b` doesn't
+; execute the CLI while bundling.
+(when-not *compiling-aot* 
+  (main))
