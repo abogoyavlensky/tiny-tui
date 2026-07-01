@@ -1,6 +1,6 @@
 ;; Stage 0 smoke test: enter TUI mode, show a message, exit on any key.
 ;;
-;; Run from the repo root: lg examples/hello_screen.lg
+;; Run from the repo root: LG_SOURCE_PATHS=src lg examples/hello_screen.lg
 
 (ns examples.hello-screen
   (:require [term]

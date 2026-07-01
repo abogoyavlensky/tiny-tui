@@ -30,18 +30,6 @@
          clear-eol
          clear-below)))
 
-(defn init!
-  "Take over the terminal: raw mode, alternate screen, hidden cursor.
-   Throws when stdin/stdout is not a terminal (term/size returns nil)."
-  []
-  (when (nil? (term/size))
-    (throw (ex-info "tiny-tui requires a terminal (stdin/stdout is not a tty)" {})))
-  (term/raw-mode!)
-  (term/alternate-screen)
-  (term/hide-cursor)
-  (term/clear)
-  (term/flush))
-
 (defn shutdown!
   "Give the terminal back: restore style, cursor, main screen and cooked
    mode. Safe to call even if init! only partially succeeded."
@@ -51,6 +39,24 @@
   (term/main-screen)
   (term/flush)
   (term/restore-mode!))
+
+(defn init!
+  "Take over the terminal: raw mode, alternate screen, hidden cursor.
+   Throws when stdin/stdout is not a terminal (term/size returns nil).
+   If setup fails after raw mode was enabled, the terminal is restored
+   before the error propagates."
+  []
+  (when (nil? (term/size))
+    (throw (ex-info "tiny-tui requires a terminal (stdin/stdout is not a tty)" {})))
+  (term/raw-mode!)
+  (try
+    (term/alternate-screen)
+    (term/hide-cursor)
+    (term/clear)
+    (term/flush)
+    (catch e
+      (shutdown!)
+      (throw e))))
 
 (defn render!
   "Write one full frame built from view string `s`."
