@@ -1,0 +1,57 @@
+;; tiny-tui.list — a pure list widget. No pagination, no scrolling (V1
+;; non-goals): state in, [state event] out, string view.
+
+(ns tiny-tui.list
+  (:require [string]
+            [tiny-tui.style :as style]))
+
+(defn create
+  "opts: {:items [...] :item->text fn :empty-text \"...\"}"
+  [opts]
+  {:items (vec (:items opts))
+   :item->text (or (:item->text opts) str)
+   :empty-text (or (:empty-text opts) "No items.")
+   :cursor 0})
+
+(defn selected-index [l]
+  (when (seq (:items l))
+    (:cursor l)))
+
+(defn selected-item [l]
+  (when (seq (:items l))
+    (nth (:items l) (:cursor l))))
+
+(defn- move [l delta]
+  (let [n (count (:items l))]
+    (if (zero? n)
+      l
+      (assoc l :cursor (min (dec n) (max 0 (+ (:cursor l) delta)))))))
+
+(defn- select-event [l]
+  (when-let [item (selected-item l)]
+    {:type :select
+     :item item
+     :index (:cursor l)}))
+
+(defn update
+  "Returns [new-state event]. Events: {:type :select ...} on enter,
+   {:type :cancel} on q/esc, nil otherwise."
+  [l msg]
+  (cond
+    (= msg :up) [(move l -1) nil]
+    (= msg :down) [(move l 1) nil]
+    (= msg :enter) [l (select-event l)]
+    (or (= msg "q") (= msg :esc)) [l {:type :cancel}]
+    :else [l nil]))
+
+(defn view [l]
+  (if (empty? (:items l))
+    (:empty-text l)
+    (string/join "\n"
+                 (map-indexed
+                   (fn [i item]
+                     (let [text ((:item->text l) item)]
+                       (if (= i (:cursor l))
+                         (str "› " (style/inverse text))
+                         (str "  " text))))
+                   (:items l)))))

@@ -1,0 +1,75 @@
+(ns tiny-tui.list-test
+  (:require [clojure.test :refer :all]
+            [string]
+            [tiny-tui.list :as tlist]
+            [tiny-tui.style :as style]))
+
+(def projects
+  [{:name "tiny-cli"} {:name "tiny-tui"} {:name "lgx"}])
+
+(defn make []
+  (tlist/create {:items projects
+                 :item->text :name}))
+
+(deftest test-create
+  (let [l (make)]
+    (is (= 0 (tlist/selected-index l)))
+    (is (= {:name "tiny-cli"} (tlist/selected-item l)))))
+
+(deftest test-cursor-moves-and-clamps
+  (let [l (make)
+        down (fn [l] (first (tlist/update l :down)))
+        up (fn [l] (first (tlist/update l :up)))]
+    (is (= 1 (tlist/selected-index (down l))))
+    (is (= {:name "tiny-tui"} (tlist/selected-item (down l))))
+    ;; clamped at the bottom
+    (is (= 2 (tlist/selected-index (down (down (down (down l)))))))
+    ;; clamped at the top
+    (is (= 0 (tlist/selected-index (up l))))
+    ;; moving returns no event
+    (is (= nil (second (tlist/update l :down))))))
+
+(deftest test-enter-selects
+  (let [[l' event] (tlist/update (first (tlist/update (make) :down)) :enter)]
+    (is (= {:type :select
+            :item {:name "tiny-tui"}
+            :index 1} event))
+    (is (= 1 (tlist/selected-index l')))))
+
+(deftest test-quit-and-esc-cancel
+  (is (= {:type :cancel} (second (tlist/update (make) "q"))))
+  (is (= {:type :cancel} (second (tlist/update (make) :esc)))))
+
+(deftest test-unknown-message-ignored
+  (let [l (make)
+        [l' event] (tlist/update l "z")]
+    (is (= l l'))
+    (is (nil? event))))
+
+(deftest test-view
+  (is (= (string/join "\n"
+                      [(str "› " (style/inverse "tiny-cli"))
+                       "  tiny-tui"
+                       "  lgx"])
+         (tlist/view (make))))
+  (is (= (string/join "\n"
+                      ["  tiny-cli"
+                       (str "› " (style/inverse "tiny-tui"))
+                       "  lgx"])
+         (tlist/view (first (tlist/update (make) :down))))))
+
+(deftest test-item->text-defaults-to-str
+  (let [l (tlist/create {:items ["a" "b"]})]
+    (is (= (string/join "\n" [(str "› " (style/inverse "a")) "  b"])
+           (tlist/view l)))))
+
+(deftest test-empty-list
+  (let [l (tlist/create {:items []})]
+    (is (= "No items." (tlist/view l)))
+    (is (nil? (tlist/selected-item l)))
+    (is (nil? (tlist/selected-index l)))
+    (is (nil? (second (tlist/update l :enter))))
+    (is (= l (first (tlist/update l :down)))))
+  (let [l (tlist/create {:items []
+                         :empty-text "Nothing here"})]
+    (is (= "Nothing here" (tlist/view l)))))
