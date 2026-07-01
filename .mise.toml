@@ -1,10 +1,16 @@
 # .mise.toml
 [tools]
-lg = "1.8.0"
-lgx = "0.1.0-alpha7"
+lg = "1.11.1"
+lgx = "0.1.0-rc4"
 cljfmt = "0.16.4"
 
 [tool_alias]
 lg = "github:nooga/let-go"
 lgx = "github:abogoyavlensky/lgx"
 cljfmt = "asdf:https://github.com/b-social/asdf-cljfmt"
+
+[settings]
+# mise can't verify lg 1.11.0+ GitHub attestations: GitHub rotated its TSA cert
+# and mise's bundled trusted root predates it. Checksum + SLSA still run. 
+# Drop when a newer mise ships the new TSA.
+github_attestations = false

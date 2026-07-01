@@ -1,4 +1,4 @@
-(ns tiny-tui.greeter)
+(ns tiny-tui.core)
 
 (defn greet
   [name]

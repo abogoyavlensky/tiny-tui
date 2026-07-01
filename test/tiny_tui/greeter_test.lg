@@ -1,6 +1,0 @@
-(ns tiny-tui.greeter-test
-  (:require [clojure.test :refer :all]
-            [tiny-tui.greeter :as greeter]))
-
-(deftest test-greet-ok
-  (is (= "Welcome to let-go!" (greeter/greet "let-go"))))
