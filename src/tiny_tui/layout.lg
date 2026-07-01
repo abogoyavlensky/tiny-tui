@@ -1,0 +1,41 @@
+;; tiny-tui.layout — pure string layout helpers. All measurements use
+;; style/visible-width so styled text lays out correctly.
+
+(ns tiny-tui.layout
+  (:require [string]
+            [tiny-tui.style :as style]))
+
+(defn lines
+  [s]
+  (let [ls (string/split s "\n")]
+    (if (empty? ls) [""] (vec ls))))
+
+(defn vstack
+  "Stack blocks vertically, skipping nils. Blocks may be multi-line."
+  [& blocks]
+  (string/join "\n" (remove nil? blocks)))
+
+(defn hstack
+  "Join strings on one line, with `sep` (default two spaces) between them."
+  ([xs] (hstack "  " xs))
+  ([sep xs] (string/join sep xs)))
+
+(defn pad
+  "Right-pad `s` with spaces to visible width `w`."
+  [s w]
+  (let [n (- w (style/visible-width s))]
+    (if (pos? n)
+      (str s (apply str (repeat n " ")))
+      s)))
+
+(defn box
+  "Draw a box around (possibly multi-line, possibly styled) `content`,
+   sized to the widest visible line with one space of inner padding."
+  [content]
+  (let [ls (lines content)
+        w (apply max (map style/visible-width ls))
+        bar (apply str (repeat (+ 2 w) "─"))]
+    (string/join "\n"
+                 (concat [(str "┌" bar "┐")]
+                         (map #(str "│ " (pad % w) " │") ls)
+                         [(str "└" bar "┘")]))))

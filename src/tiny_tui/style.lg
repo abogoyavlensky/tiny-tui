@@ -1,0 +1,83 @@
+;; tiny-tui.style — pure ANSI text styling. Every function takes text and
+;; returns text wrapped in SGR escape sequences; nothing here touches the
+;; terminal (term/set-fg etc. write directly to stdout, which is the wrong
+;; shape for string-based views).
+;;
+;; Named colors use the portable 16-color codes; an integer color is passed
+;; through as 256-color. Escape bytes are built with (char 27), never
+;; written literally in source.
+
+(ns tiny-tui.style
+  (:require [string]))
+
+(def ^:private ESC (str (char 27)))
+(def ^:private esc-char (char 27))
+(def ^:private reset (str ESC "[0m"))
+
+(def ^:private color-codes
+  {:black 30
+   :red 31
+   :green 32
+   :yellow 33
+   :blue 34
+   :magenta 35
+   :cyan 36
+   :white 37
+   :bright-black 90
+   :bright-red 91
+   :bright-green 92
+   :bright-yellow 93
+   :bright-blue 94
+   :bright-magenta 95
+   :bright-cyan 96
+   :bright-white 97})
+
+(defn- fg-code [c]
+  (if (keyword? c)
+    (str (get color-codes c))
+    (str "38;5;" c)))
+
+(defn- bg-code [c]
+  (if (keyword? c)
+    (str (+ 10 (get color-codes c)))
+    (str "48;5;" c)))
+
+(defn- sgr [codes s]
+  (if (empty? codes)
+    s
+    (str ESC "[" (string/join ";" codes) "m" s reset)))
+
+(defn bold [s] (sgr ["1"] s))
+(defn dim [s] (sgr ["2"] s))
+(defn inverse [s] (sgr ["7"] s))
+(defn fg [c s] (sgr [(fg-code c)] s))
+(defn bg [c s] (sgr [(bg-code c)] s))
+
+(defn styled
+  "Apply several attributes at once as a single SGR sequence.
+   attrs: {:bold? :dim? :inverse? :fg :bg}"
+  [attrs s]
+  (sgr (remove nil?
+               [(when (:bold? attrs) "1")
+                (when (:dim? attrs) "2")
+                (when (:inverse? attrs) "7")
+                (when-let [c (:fg attrs)] (fg-code c))
+                (when-let [c (:bg attrs)] (bg-code c))])
+       s))
+
+(defn strip
+  "Remove all ESC[...m sequences, leaving the visible text."
+  [s]
+  (loop [cs (seq s) out []]
+    (if (empty? cs)
+      (apply str out)
+      (let [c (first cs)]
+        (if (= c esc-char)
+          (recur (rest (drop-while #(not= % \m) cs)) out)
+          (recur (rest cs) (conj out c)))))))
+
+(defn visible-width
+  "Display width of `s` ignoring escape sequences. Counts characters —
+   wide-rune handling is out of scope for V1."
+  [s]
+  (count (strip s)))

@@ -1,0 +1,13 @@
+;; tiny-tui.help — render a one-line help bar from key bindings.
+
+(ns tiny-tui.help
+  (:require [string]
+            [tiny-tui.style :as style]))
+
+(defn view
+  "bindings: [{:key \"q\" :label \"quit\"} ...] ->
+   \"q quit   enter select\" with keys bold and labels dim."
+  [bindings]
+  (string/join "   "
+               (map (fn [b] (str (style/bold (:key b)) " " (style/dim (:label b))))
+                    bindings)))

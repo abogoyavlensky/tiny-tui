@@ -1,0 +1,38 @@
+(ns tiny-tui.style-test
+  (:require [clojure.test :refer :all]
+            [tiny-tui.style :as style]))
+
+(def ESC (str (char 27)))
+(defn sgr [codes s] (str ESC "[" codes "m" s ESC "[0m"))
+
+(deftest test-attrs
+  (is (= (sgr "1" "x") (style/bold "x")))
+  (is (= (sgr "2" "x") (style/dim "x")))
+  (is (= (sgr "7" "x") (style/inverse "x"))))
+
+(deftest test-fg-colors
+  (is (= (sgr "36" "x") (style/fg :cyan "x")))
+  (is (= (sgr "91" "x") (style/fg :bright-red "x")))
+  (is (= (sgr "38;5;208" "x") (style/fg 208 "x"))))
+
+(deftest test-bg-colors
+  (is (= (sgr "46" "x") (style/bg :cyan "x")))
+  (is (= (sgr "101" "x") (style/bg :bright-red "x")))
+  (is (= (sgr "48;5;208" "x") (style/bg 208 "x"))))
+
+(deftest test-nesting
+  (is (= (sgr "1" (sgr "36" "x"))
+         (style/bold (style/fg :cyan "x")))))
+
+(deftest test-styled-combines-codes
+  (is (= (sgr "1;36" "x") (style/styled {:bold? true
+                                         :fg :cyan} "x")))
+  (is (= (sgr "7" "x") (style/styled {:inverse? true} "x")))
+  (is (= "x" (style/styled {} "x"))))
+
+(deftest test-strip-and-visible-width
+  (is (= "x" (style/strip (style/bold "x"))))
+  (is (= "Projects" (style/strip (style/bold (style/fg :cyan "Projects")))))
+  (is (= "plain" (style/strip "plain")))
+  (is (= 8 (style/visible-width (style/fg :cyan "Projects"))))
+  (is (= 0 (style/visible-width ""))))

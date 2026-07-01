@@ -1,0 +1,48 @@
+(ns tiny-tui.layout-test
+  (:require [clojure.test :refer :all]
+            [string]
+            [tiny-tui.layout :as layout]
+            [tiny-tui.style :as style]))
+
+(deftest test-lines
+  (is (= ["one" "two"] (layout/lines "one\ntwo")))
+  (is (= [""] (layout/lines ""))))
+
+(deftest test-vstack
+  (is (= "a\nb\nc" (layout/vstack "a" "b" "c")))
+  (is (= "a\nc" (layout/vstack "a" nil "c")))
+  (is (= "title\nbody line 1\nbody line 2"
+         (layout/vstack "title" "body line 1\nbody line 2"))))
+
+(deftest test-hstack
+  (is (= "a  b  c" (layout/hstack ["a" "b" "c"])))
+  (is (= "a   b" (layout/hstack "   " ["a" "b"]))))
+
+(deftest test-pad
+  (is (= "ab   " (layout/pad "ab" 5)))
+  (is (= "ab" (layout/pad "ab" 2)))
+  ;; padding measures visible width, not raw length
+  (is (= (str (style/bold "ab") "   ")
+         (layout/pad (style/bold "ab") 5))))
+
+(deftest test-box-single-line
+  (is (= (string/join "\n"
+                      ["┌──────────┐"
+                       "│ Projects │"
+                       "└──────────┘"])
+         (layout/box "Projects"))))
+
+(deftest test-box-multi-line
+  (is (= (string/join "\n"
+                      ["┌──────────┐"
+                       "│ Projects │"
+                       "│ hi       │"
+                       "└──────────┘"])
+         (layout/box "Projects\nhi"))))
+
+(deftest test-box-styled-content
+  (is (= (string/join "\n"
+                      ["┌────┐"
+                       (str "│ " (style/bold "ab") " │")
+                       "└────┘"])
+         (layout/box (style/bold "ab")))))

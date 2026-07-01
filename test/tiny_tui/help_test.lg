@@ -1,0 +1,20 @@
+(ns tiny-tui.help-test
+  (:require [clojure.test :refer :all]
+            [tiny-tui.help :as help]
+            [tiny-tui.style :as style]))
+
+(deftest test-view
+  (is (= (str (style/bold "q") " " (style/dim "quit"))
+         (help/view [{:key "q"
+                      :label "quit"}])))
+  (is (= (str (style/bold "↑/↓") " " (style/dim "navigate")
+              "   "
+              (style/bold "enter") " " (style/dim "select")
+              "   "
+              (style/bold "q") " " (style/dim "quit"))
+         (help/view [{:key "↑/↓"
+                      :label "navigate"}
+                     {:key "enter"
+                      :label "select"}
+                     {:key "q"
+                      :label "quit"}]))))

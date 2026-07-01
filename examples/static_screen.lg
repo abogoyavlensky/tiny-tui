@@ -1,0 +1,24 @@
+;; Stage 1 demo: a static styled screen, no interaction.
+;;
+;; Run from the repo root: LG_SOURCE_PATHS=src lg examples/static_screen.lg
+
+(ns examples.static-screen
+  (:require [term]
+            [tiny-tui.screen :as screen]
+            [tiny-tui.style :as style]
+            [tiny-tui.layout :as layout]
+            [tiny-tui.help :as help]))
+
+(defn -main []
+  (screen/with-screen
+    (screen/render!
+     (layout/vstack
+      (layout/box (style/bold (style/fg :cyan "Projects")))
+      ""
+      "No interaction yet."
+      ""
+      (help/view [{:key "any key" :label "quit"}])))
+    (term/read-key))
+  (println "Bye."))
+
+(when-not *compiling-aot* (-main))
