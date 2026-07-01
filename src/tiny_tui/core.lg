@@ -23,13 +23,21 @@
             [tiny-tui.screen :as screen]
             [tiny-tui.style :as style]))
 
+(defn- terminal-size []
+  ;; term/size is nil on a plain pipe and can report [0 0] on an
+  ;; unconfigured pty — both are unusable for layout.
+  (let [size (term/size)]
+    (if (and size (pos? (first size)) (pos? (second size)))
+      size
+      [80 24])))
+
 (defn- run-loop [opts]
   (let [update-fn (:update opts)
         view (:view opts)
         read-key-fn (or (:read-key-fn opts) key/read)
         render-fn (or (:render-fn opts) screen/render!)]
     (loop [state (:init opts)]
-      (let [state (assoc state :tui/size (or (term/size) [80 24]))]
+      (let [state (assoc state :tui/size (terminal-size))]
         (render-fn (view state))
         (let [msg (read-key-fn)]
           (cond
@@ -72,7 +80,7 @@
            (concat
              (when (:title opts)
                [(style/bold (:title opts)) ""])
-             [(tlist/view (:list state))
+             [(tlist/view (:list state) {:width (first (:tui/size state))})
               ""
               (help/view (tlist/bindings (:list state)))]))))
 

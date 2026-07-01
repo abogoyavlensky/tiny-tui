@@ -133,6 +133,45 @@
            :label "quit"}]
          (tlist/bindings (make)))))
 
+(deftest test-custom-cursor-marker
+  (let [l (tlist/create {:items ["a" "b"]
+                         :cursor-marker "→ "})]
+    (is (= (string/join "\n" [(str "→ " (style/inverse "a")) "  b"])
+           (tlist/view l)))))
+
+(deftest test-custom-selected-style
+  (let [l (tlist/create {:items ["a" "b"]
+                         :selected-style (fn [s] (style/fg :cyan s))})]
+    (is (= (string/join "\n" [(str "› " (style/fg :cyan "a")) "  b"])
+           (tlist/view l)))))
+
+(deftest test-width-truncation
+  (let [l (tlist/create {:items ["abcdefghijkl" "ab"]})]
+    ;; marker (2) + 7 chars + ellipsis = 10 columns
+    (is (= (string/join "\n" [(str "› " (style/inverse "abcdefg…")) "  ab"])
+           (tlist/view l {:width 10})))
+    ;; no width -> no truncation
+    (is (= (string/join "\n" [(str "› " (style/inverse "abcdefghijkl")) "  ab"])
+           (tlist/view l)))
+    ;; wide enough -> untouched
+    (is (= (string/join "\n" [(str "› " (style/inverse "abcdefghijkl")) "  ab"])
+           (tlist/view l {:width 40})))
+    ;; a width too small to truncate into (e.g. a misreported terminal
+    ;; size) must not crash — text is left alone
+    (is (= (string/join "\n" [(str "› " (style/inverse "abcdefghijkl")) "  ab"])
+           (tlist/view l {:width 0})))
+    (is (= (string/join "\n" [(str "› " (style/inverse "abcdefghijkl")) "  ab"])
+           (tlist/view l {:width 3})))))
+
+(deftest test-styled-item-text-never-truncated
+  ;; cutting styled text by raw index could split an escape sequence, so
+  ;; it is left intact even when over budget
+  (let [styled (style/fg :cyan "abcdefghijkl")
+        l (tlist/create {:items [styled]
+                         :item->text identity})]
+    (is (= (str "› " (style/inverse styled))
+           (tlist/view l {:width 10})))))
+
 (deftest test-empty-list
   (let [l (tlist/create {:items []})]
     (is (= "No items." (tlist/view l)))

@@ -14,6 +14,8 @@
    :item->text (or (:item->text opts) str)
    :empty-text (or (:empty-text opts) "No items.")
    :actions (vec (:actions opts))
+   :cursor-marker (or (:cursor-marker opts) "› ")
+   :selected-style (or (:selected-style opts) style/inverse)
    :cursor 0})
 
 (defn selected-index [l]
@@ -78,14 +80,33 @@
                [{:key "q"
                  :label "quit"}])))
 
-(defn view [l]
-  (if (empty? (:items l))
-    (:empty-text l)
-    (string/join "\n"
-                 (map-indexed
-                   (fn [i item]
-                     (let [text ((:item->text l) item)]
-                       (if (= i (:cursor l))
-                         (str "› " (style/inverse text))
-                         (str "  " text))))
-                   (:items l)))))
+(defn- truncate [text max-w]
+  ;; Only plain text is truncated: cutting styled text by raw index could
+  ;; land inside an escape sequence. A budget under 2 columns can't fit
+  ;; anything plus an ellipsis; both cases leave the text alone.
+  (if (and max-w
+           (>= max-w 2)
+           (= (count text) (style/visible-width text))
+           (> (count text) max-w))
+    (str (subs text 0 (dec max-w)) "…")
+    text))
+
+(defn view
+  "Render the list. view-opts may carry :width — the column budget; item
+   text is truncated with a trailing ellipsis to fit."
+  ([l] (view l {}))
+  ([l view-opts]
+   (if (empty? (:items l))
+     (:empty-text l)
+     (let [marker (:cursor-marker l)
+           marker-w (style/visible-width marker)
+           blank (apply str (repeat marker-w " "))
+           max-w (when-let [w (:width view-opts)] (- w marker-w))]
+       (string/join "\n"
+                    (map-indexed
+                      (fn [i item]
+                        (let [text (truncate ((:item->text l) item) max-w)]
+                          (if (= i (:cursor l))
+                            (str marker ((:selected-style l) text))
+                            (str blank text))))
+                      (:items l)))))))
