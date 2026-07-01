@@ -1,5 +1,47 @@
-(ns tiny-tui.core)
+;; tiny-tui.core — the public API.
+;;
+;; run: the minimal program loop. An app is three things:
+;;   :init   initial state (a map)
+;;   :update (fn [state msg] [new-state event]) — nil event keeps looping,
+;;           any non-nil event stops the loop
+;;   :view   (fn [state] string)
+;;
+;; run returns [final-state event]. It handles :ctrl-c itself (returns
+;; event :ctrl-c without consulting :update) and treats :resize as a plain
+;; redraw. Terminal size is injected as :tui/size before every view call.
+;;
+;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
+;; they let whole flows run headlessly with scripted keys.
 
-(defn greet
-  [name]
-  (str "Welcome to " name "!"))
+(ns tiny-tui.core
+  (:require [term]
+            [tiny-tui.key :as key]
+            [tiny-tui.screen :as screen]))
+
+(defn- run-loop [opts]
+  (let [update-fn (:update opts)
+        view (:view opts)
+        read-key-fn (or (:read-key-fn opts) key/read)
+        render-fn (or (:render-fn opts) screen/render!)]
+    (loop [state (:init opts)]
+      (let [state (assoc state :tui/size (or (term/size) [80 24]))]
+        (render-fn (view state))
+        (let [msg (read-key-fn)]
+          (cond
+            (nil? msg) [state nil]
+            (= msg :ctrl-c) [state :ctrl-c]
+            (= msg :resize) (recur state)
+            :else (let [result (update-fn state msg)
+                        next-state (first result)
+                        event (second result)]
+                    (if (nil? event)
+                      (recur next-state)
+                      [next-state event]))))))))
+
+(defn run
+  "Run a TUI program (see namespace docstring). Returns [final-state event]."
+  [opts]
+  (if (false? (:screen opts))
+    (run-loop opts)
+    (screen/with-screen
+      (run-loop opts))))

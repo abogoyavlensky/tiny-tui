@@ -1,0 +1,38 @@
+(ns tiny-tui.key-test
+  (:require [clojure.test :refer :all]
+            [tiny-tui.key :as key]))
+
+(def ESC (str (char 27)))
+
+(deftest test-parse-arrows
+  (is (= :up (key/parse (str ESC "[A"))))
+  (is (= :up (key/parse (str ESC "OA"))))
+  (is (= :down (key/parse (str ESC "[B"))))
+  (is (= :down (key/parse (str ESC "OB"))))
+  (is (= :right (key/parse (str ESC "[C"))))
+  (is (= :left (key/parse (str ESC "[D")))))
+
+(deftest test-parse-nav-keys
+  (is (= :home (key/parse (str ESC "[H"))))
+  (is (= :home (key/parse (str ESC "[1~"))))
+  (is (= :end (key/parse (str ESC "[F"))))
+  (is (= :end (key/parse (str ESC "[4~"))))
+  (is (= :delete (key/parse (str ESC "[3~")))))
+
+(deftest test-parse-named-keys
+  (is (= :enter (key/parse (str (char 13)))))
+  (is (= :tab (key/parse (str (char 9)))))
+  (is (= :backspace (key/parse (str (char 127)))))
+  (is (= :esc (key/parse ESC))))
+
+(deftest test-parse-control-keys
+  (is (= :ctrl-c (key/parse (str (char 3)))))
+  (is (= :ctrl-a (key/parse (str (char 1)))))
+  (is (= :ctrl-space (key/parse (str (char 0)))))
+  ;; BEL doubles as term/read-key's resize wake-up
+  (is (= :resize (key/parse (str (char 7))))))
+
+(deftest test-parse-printables-pass-through
+  (is (= "q" (key/parse "q")))
+  (is (= "d" (key/parse "d")))
+  (is (= " " (key/parse " "))))

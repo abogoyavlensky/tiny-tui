@@ -1,0 +1,53 @@
+;; tiny-tui.key — translate raw terminal input into simple messages:
+;; keywords for special keys (:up :down :enter :esc :ctrl-c ...), plain
+;; one-character strings for printable text.
+;;
+;; Only `read` touches the terminal; `parse` is pure and unit-tested.
+;; Control bytes are built with (char code) rather than written literally
+;; in source (mirrors legmacs.keys).
+
+(ns tiny-tui.key
+  (:require [term]))
+
+(def ^:private ESC (str (char 27)))
+
+(def ^:private special
+  (into {}
+        (concat
+          (map (fn [pair] [(str ESC (first pair)) (second pair)])
+               [["[A" :up] ["OA" :up]
+                ["[B" :down] ["OB" :down]
+                ["[C" :right] ["OC" :right]
+                ["[D" :left] ["OD" :left]
+                ["[H" :home] ["OH" :home] ["[1~" :home] ["[7~" :home]
+                ["[F" :end] ["OF" :end] ["[4~" :end] ["[8~" :end]
+                ["[3~" :delete]
+                ["[5~" :pageup]
+                ["[6~" :pagedown]])
+          [[(str (char 13)) :enter]
+           [(str (char 9)) :tab]
+           [(str (char 127)) :backspace]
+           [ESC :esc]
+           [(str (char 0)) :ctrl-space]
+          ;; BEL is term/read-key's synthetic resize wake-up, and also a
+          ;; genuine Ctrl-G — indistinguishable by design. Treating both as
+          ;; :resize is harmless: the loop just redraws.
+           [(str (char 7)) :resize]])))
+
+(defn- ctrl-key [code]
+  (keyword (str "ctrl-" (char (+ code 96)))))
+
+(defn parse
+  "Translate one term/read-key token into a message. Printable text passes
+   through unchanged."
+  [k]
+  (let [code (when (= 1 (count k)) (int (first (seq k))))]
+    (cond
+      (contains? special k) (get special k)
+      (and code (<= 1 code 26)) (ctrl-key code)
+      :else k)))
+
+(defn read
+  "Block for one key. Returns a message, or nil at end of input."
+  []
+  (some-> (term/read-key) parse))

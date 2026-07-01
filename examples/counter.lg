@@ -1,0 +1,30 @@
+;; Stage 2 demo: a tiny interactive counter.
+;;
+;; Run from the repo root: LG_SOURCE_PATHS=src lg examples/counter.lg
+
+(ns examples.counter
+  (:require [tiny-tui.core :as tui]
+            [tiny-tui.help :as help]
+            [tiny-tui.layout :as layout]
+            [tiny-tui.style :as style]))
+
+(defn -main []
+  (let [result (tui/run
+                {:init {:count 0}
+                 :update (fn [state msg]
+                           (case msg
+                             :up [(update state :count inc) nil]
+                             :down [(update state :count dec) nil]
+                             "q" [state :quit]
+                             [state nil]))
+                 :view (fn [state]
+                         (layout/vstack
+                          (style/bold "Counter")
+                          ""
+                          (str "Count: " (:count state))
+                          ""
+                          (help/view [{:key "↑/↓" :label "change"}
+                                      {:key "q" :label "quit"}])))})]
+    (println "Final count:" (:count (first result)))))
+
+(when-not *compiling-aot* (-main))

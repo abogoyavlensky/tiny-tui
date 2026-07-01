@@ -1,6 +1,81 @@
-(ns tiny-tui.greeter-test
+(ns tiny-tui.core-test
   (:require [clojure.test :refer :all]
-            [tiny-tui.core :as c]))
+            [tiny-tui.core :as tui]))
 
-(deftest test-greet-ok
-  (is (= "Welcome to let-go!" (c/greet "let-go"))))
+(defn scripted
+  "Read-fn that returns the scripted messages one by one, then nil (EOF)."
+  [msgs]
+  (let [q (atom (seq msgs))]
+    (fn []
+      (let [m (first @q)]
+        (swap! q rest)
+        m))))
+
+(defn counter-app [frames]
+  {:init {:count 0}
+   :update (fn [state msg]
+             (case msg
+               :up [(update state :count inc) nil]
+               :down [(update state :count dec) nil]
+               "q" [state :quit]
+               [state nil]))
+   :view (fn [state] (str "Count: " (:count state)))
+   :render-fn (fn [s] (swap! frames conj s))
+   :screen false})
+
+(deftest test-run-counter
+  (let [frames (atom [])
+        [state event] (tui/run (assoc (counter-app frames)
+                                      :read-key-fn (scripted [:up :up :down "q"])))]
+    (is (= 1 (:count state)))
+    (is (= :quit event))
+    ;; one frame per loop iteration: initial + after each of the 3 moves
+    (is (= 4 (count @frames)))
+    (is (= "Count: 1" (last @frames)))))
+
+(deftest test-run-ctrl-c-quits-without-update
+  (let [seen (atom [])
+        app {:init {}
+             :update (fn [state msg] (swap! seen conj msg) [state nil])
+             :view (fn [_] "x")
+             :render-fn (fn [_] nil)
+             :screen false
+             :read-key-fn (scripted [:ctrl-c])}
+        [_ event] (tui/run app)]
+    (is (= :ctrl-c event))
+    (is (= [] @seen))))
+
+(deftest test-run-resize-rerenders-without-update
+  (let [seen (atom [])
+        frames (atom [])
+        app {:init {}
+             :update (fn [state msg] (swap! seen conj msg) [state :quit])
+             :view (fn [_] "x")
+             :render-fn (fn [s] (swap! frames conj s))
+             :screen false
+             :read-key-fn (scripted [:resize "q"])}]
+    (tui/run app)
+    (is (= ["q"] @seen))
+    (is (= 2 (count @frames)))))
+
+(deftest test-run-injects-tui-size
+  (let [sizes (atom [])
+        app {:init {}
+             :update (fn [state _] [state :quit])
+             :view (fn [state] (swap! sizes conj (:tui/size state)) "x")
+             :render-fn (fn [_] nil)
+             :screen false
+             :read-key-fn (scripted ["q"])}]
+    (tui/run app)
+    (is (= [[80 24]] @sizes))))
+
+(deftest test-run-eof-terminates
+  (let [app {:init {:a 1}
+             :update (fn [state _] [state nil])
+             :view (fn [_] "x")
+             :render-fn (fn [_] nil)
+             :screen false
+             :read-key-fn (scripted [])}
+        [state event] (tui/run app)]
+    (is (= 1 (:a state)))
+    (is (nil? event))))
