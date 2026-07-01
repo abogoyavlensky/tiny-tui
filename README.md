@@ -109,5 +109,4 @@ lgx --help
 lgx run    # select demo (main.lg)
 lgx test
 lgx fmt
-lgx build
 ```
