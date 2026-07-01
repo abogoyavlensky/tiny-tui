@@ -69,12 +69,22 @@
   (term/clear)
   (term/flush))
 
+(defn with-screen*
+  "Run thunk `f` with the terminal in TUI mode; shut the terminal down
+   afterwards whether `f` returned or threw, then return/rethrow.
+   Deliberately avoids try/finally: in let-go a try without catch returns
+   the thrown value instead of propagating it, and a catch that rethrows
+   skips the finally — either way cleanup or the error would be lost."
+  [f]
+  (init!)
+  (let [result (try [:ok (f)] (catch e [:err e]))]
+    (shutdown!)
+    (if (= :ok (first result))
+      (second result)
+      (throw (second result)))))
+
 (defmacro with-screen
   "Run `body` with the terminal in TUI mode, guaranteeing cleanup even when
    an exception escapes."
   [& body]
-  (list 'do
-        (list 'tiny-tui.screen/init!)
-        (list 'try
-              (cons 'do body)
-              (list 'finally (list 'tiny-tui.screen/shutdown!)))))
+  (list 'tiny-tui.screen/with-screen* (list 'fn [] (cons 'do body))))
