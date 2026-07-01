@@ -17,7 +17,7 @@ The first version should support:
 - Selecting an item with Enter.
 - Showing a help line with available keyboard shortcuts.
 - Defining custom actions for the currently selected item.
-- Showing a confirmation popup before destructive actions.
+- Confirmation actions with a simple yes/no selection or popup (see below).
 
 The library should feel natural in `let-go`: data maps, simple functions, small namespaces, and predictable state transitions.
 
@@ -467,7 +467,10 @@ Example:
 
 At this point destructive actions can still return immediately. Confirmation comes next.
 
-## Stage 6 — Confirmation popup as a standalone widget
+## Stage 6 — Confirmation
+
+Think to make a popup or palin simple list selection yes/no confirmation.
+I don't know what is simpler clearer and more intuitive for users.
 
 Purpose: support safe destructive flows.
 

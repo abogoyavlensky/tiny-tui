@@ -9,3 +9,4 @@ lsp/
 .vscode
 .calva
 .env
+.clj-pulse
