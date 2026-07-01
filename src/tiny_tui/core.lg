@@ -15,8 +15,12 @@
 
 (ns tiny-tui.core
   (:require [term]
+            [tiny-tui.help :as help]
             [tiny-tui.key :as key]
-            [tiny-tui.screen :as screen]))
+            [tiny-tui.layout :as layout]
+            [tiny-tui.list :as tlist]
+            [tiny-tui.screen :as screen]
+            [tiny-tui.style :as style]))
 
 (defn- run-loop [opts]
   (let [update-fn (:update opts)
@@ -45,3 +49,40 @@
     (run-loop opts)
     (screen/with-screen
       (run-loop opts))))
+
+(def ^:private select-bindings
+  [{:key "↑/↓"
+    :label "navigate"}
+   {:key "enter"
+    :label "select"}
+   {:key "q"
+    :label "quit"}])
+
+(defn- select-view [opts list-state]
+  (apply layout/vstack
+         (concat
+           (when (:title opts)
+             [(style/bold (:title opts)) ""])
+           [(tlist/view list-state)
+            ""
+            (help/view select-bindings)])))
+
+(defn select
+  "Show a navigable list and return the user's choice:
+     {:type :select :item item :index n}  on enter
+     {:type :cancel}                      on q / esc / Ctrl-C
+   opts: :title, :items, :item->text (see tiny-tui.list/create), plus the
+   run testing hooks (:read-key-fn :render-fn :screen)."
+  [opts]
+  (let [result (run {:init {:list (tlist/create opts)}
+                     :update (fn [state msg]
+                               (let [r (tlist/update (:list state) msg)]
+                                 [(assoc state :list (first r)) (second r)]))
+                     :view (fn [state] (select-view opts (:list state)))
+                     :read-key-fn (:read-key-fn opts)
+                     :render-fn (:render-fn opts)
+                     :screen (:screen opts)})
+        event (second result)]
+    (if (map? event)
+      event
+      {:type :cancel})))

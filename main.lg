@@ -1,12 +1,16 @@
 (ns tiny-tui.main
-  (:require [term]
-            [tiny-tui.screen :as screen]))
+  (:require [tiny-tui.core :as tui]))
+
+(def projects
+  [{:id 1 :name "tiny-cli"}
+   {:id 2 :name "tiny-tui"}
+   {:id 3 :name "lgx"}])
 
 (defn- main []
-  (screen/with-screen
-    (screen/render! "Hello from tiny-tui — press any key to exit")
-    (term/read-key))
-  (println "Terminal restored."))
+  (let [result (tui/select {:title "Select project"
+                            :items projects
+                            :item->text :name})]
+    (println "Result:" result)))
 
 ; Top-level forms run during AOT compilation too. Guard so `lg -b` doesn't
 ; execute the CLI while bundling.

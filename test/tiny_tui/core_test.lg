@@ -1,6 +1,10 @@
 (ns tiny-tui.core-test
   (:require [clojure.test :refer :all]
-            [tiny-tui.core :as tui]))
+            [tiny-tui.core :as tui]
+            [tiny-tui.help :as help]
+            [tiny-tui.layout :as layout]
+            [tiny-tui.list :as tlist]
+            [tiny-tui.style :as style]))
 
 (defn scripted
   "Read-fn that returns the scripted messages one by one, then nil (EOF)."
@@ -68,6 +72,62 @@
              :read-key-fn (scripted ["q"])}]
     (tui/run app)
     (is (= [[80 24]] @sizes))))
+
+(def projects
+  [{:name "tiny-cli"} {:name "tiny-tui"} {:name "lgx"}])
+
+(defn select-opts [script frames]
+  {:title "Choose project"
+   :items projects
+   :item->text :name
+   :read-key-fn (scripted script)
+   :render-fn (fn [s] (swap! frames conj s))
+   :screen false})
+
+(deftest test-select-picks-item
+  (is (= {:type :select
+          :item {:name "tiny-tui"}
+          :index 1}
+         (tui/select (select-opts [:down :enter] (atom []))))))
+
+(deftest test-select-cancel
+  (is (= {:type :cancel} (tui/select (select-opts ["q"] (atom [])))))
+  (is (= {:type :cancel} (tui/select (select-opts [:esc] (atom [])))))
+  (is (= {:type :cancel} (tui/select (select-opts [:ctrl-c] (atom [])))))
+  ;; EOF also cancels
+  (is (= {:type :cancel} (tui/select (select-opts [] (atom []))))))
+
+(deftest test-select-frame
+  (let [frames (atom [])]
+    (tui/select (select-opts ["q"] frames))
+    (is (= (layout/vstack
+             (style/bold "Choose project")
+             ""
+             (tlist/view (tlist/create {:items projects
+                                        :item->text :name}))
+             ""
+             (help/view [{:key "↑/↓"
+                          :label "navigate"}
+                         {:key "enter"
+                          :label "select"}
+                         {:key "q"
+                          :label "quit"}]))
+           (first @frames)))))
+
+(deftest test-select-without-title
+  (let [frames (atom [])]
+    (tui/select (assoc (select-opts ["q"] frames) :title nil))
+    (is (= (layout/vstack
+             (tlist/view (tlist/create {:items projects
+                                        :item->text :name}))
+             ""
+             (help/view [{:key "↑/↓"
+                          :label "navigate"}
+                         {:key "enter"
+                          :label "select"}
+                         {:key "q"
+                          :label "quit"}]))
+           (first @frames)))))
 
 (deftest test-run-eof-terminates
   (let [app {:init {:a 1}

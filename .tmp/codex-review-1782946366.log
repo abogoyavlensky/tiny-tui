@@ -1,0 +1,3708 @@
+2026-07-01T22:52:47.799728Z ERROR codex_core::session::session: failed to load skill /Users/andrew/Projects/agents/skills/makegoal/SKILL.md: invalid YAML: mapping values are not allowed in this context at line 2 column 759
+OpenAI Codex v0.141.0
+--------
+workdir: /Users/andrew/Projects/tiny-tui
+model: gpt-5.5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019f1fe2-8625-7923-92de-1153ed18ea8f
+--------
+user
+changes against '7159928'
+2026-07-01T22:52:47.952036Z ERROR codex_core::session::session: failed to load skill /Users/andrew/Projects/agents/skills/makegoal/SKILL.md: invalid YAML: mapping values are not allowed in this context at line 2 column 759
+exec
+/bin/bash -lc 'cat /Users/andrew/Projects/agents/skills/code-review/SKILL.md && git diff 71599287e1187a39ac6aa48920a92be1b2d2b652' in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+---
+name: code-review
+description: Review local code changes — uncommitted work, the current branch vs main, or a specific commit — for code quality, minimal implementation, basic security, and feature completeness. Use this skill whenever the user asks to review code, review changes, review a branch, review a commit, audit a diff, sanity-check what's about to be committed, or asks "is this ready to ship?" — even when they don't say the word "review" explicitly. This is a fast local review run inside the project, not the cloud-based /ultrareview. The output is a severity-grouped findings report with file:line citations.
+---
+
+# Code review
+
+This skill produces a focused review of local changes against four axes: code
+quality, minimal implementation, basic security, and feature completeness.
+Findings are grouped by severity (Must fix / Should fix / Nit), with each
+item tagged by axis and pointing to a specific file and line.
+
+The reviewer reads the diff carefully, but also reads enough surrounding code
+to judge intent and call sites. A diff in isolation is rarely enough.
+
+## Workflow
+
+### 1. Determine scope
+
+Pick what to review based on the user's request and repo state. Resolve in
+this order:
+
+1. **User named a commit or range** (e.g. "review commit abc123",
+   "review HEAD~3..HEAD"): use that explicitly with `git show <ref>` or
+   `git diff <range>`.
+2. **User said "branch", "this branch", "my branch"** or similar: diff the
+   current branch against the main branch.
+   - Determine the main branch: `git rev-parse --verify main` then
+     `master` as fallback. If neither exists, ask.
+   - Use `git log --oneline <main>..HEAD` and
+     `git diff <main>...HEAD`.
+3. **No explicit scope from the user**: auto-detect.
+   - If there are uncommitted *tracked* changes, review those
+     (`git diff HEAD`). Untracked files do not count toward scope
+     detection and are not included in the review by default — they're
+     usually local scratch (build outputs, editor configs, dev tooling
+     like `.mise.toml` or `.clj-lsp/`, WIP that was never meant for
+     review). If the user wants a specific untracked file reviewed,
+     they'll name it.
+   - Else if the current branch is ahead of main: review the branch
+     (case 2).
+   - Else: ask which commit or scope to review.
+
+State the chosen scope at the top of the report so the user can correct it
+if you guessed wrong.
+
+### 2. Gather the diff and infer intent
+
+For the chosen scope:
+
+- Get the diff with enough context (`git diff -U10` or higher) so you can
+  reason about callers and surrounding logic.
+- For commit/branch scopes, read the commit message(s) — they're the stated
+  intent. Quote the relevant phrasing in your head.
+- For uncommitted scopes with no commit message, infer intent from the diff
+  itself. If intent is genuinely unclear (e.g. unrelated changes mixed
+  together, or a single change whose purpose isn't legible), say so in the
+  report under Notes and continue with what you can reason about.
+
+When a finding turns on something outside the diff (a caller, a related
+file, a config), open that file and verify before reporting. Don't speculate
+— either confirm or skip.
+
+### 3. Review against the four axes
+
+Each axis below has a short explanation of what to look for and why. These
+aren't checklists to grind through mechanically — they're lenses. Read the
+diff once, then ask yourself the questions in each section.
+
+#### Code quality
+
+Is the change clear to read? Does each function do one thing? Are names
+unambiguous? Is error handling at the right boundary (system edges, not
+internal calls between trusted modules)? Are there dead branches, unused
+imports, copy-pasted blocks that drifted?
+
+Flag anything a maintainer reading this six months from now will need to
+re-derive. The cost of unclear code is paid every time someone touches it.
+
+#### Minimal implementation
+
+Did the change add only what the task required? Watch for:
+
+- **Premature abstractions** — extracting a helper used once, generic
+  parameters that have no second caller, type hierarchies for a single
+  concrete case.
+- **Speculative generality** — options/flags that aren't exercised, branches
+  for hypothetical future inputs, "in case we ever need it" code.
+- **Defensive checks against impossible states** — guards that protect
+  against conditions the surrounding code already prevents.
+- **Backwards-compatibility scaffolding** for code that hasn't shipped.
+- **Restating-the-code comments** — comments that paraphrase the next line
+  rather than capture a non-obvious why.
+
+Three similar lines beats a premature abstraction. Code is easier to
+generalize once a real second use arrives than to un-generalize when the
+abstraction was wrong.
+
+#### Basic security
+
+You're not running a full security audit — you're catching obvious mistakes
+that wouldn't survive review at any company. Look for:
+
+- **Injection** — shell, SQL, HTML, logs — anywhere user input lands in a
+  string that's then interpreted.
+- **Path traversal** — user-supplied paths joined to a base directory
+  without validation, or read/written without checking the resolved path.
+- **Untrusted deserialization** — `eval`, `pickle`, `Marshal`, `JSON.parse`
+  on attacker-controlled input.
+- **Hardcoded secrets or credentials** in source.
+- **Missing input validation at trust boundaries** — HTTP handlers,
+  CLI args from external sources, file uploads.
+- **Catastrophic regex** — unbounded backtracking on user input.
+
+Internal code calling internal code is a trusted boundary; don't demand
+validation between components that already trust each other. Validation
+goes at the system edge.
+
+#### Feature completeness
+
+Does the change actually accomplish what its commit message (or apparent
+intent) says? Look for:
+
+- **Stated behavior not delivered** — message says "fix X under Y" but only
+  X is touched.
+- **Edge cases the change forgot** — empty input, nil/null, boundary values
+  (zero, negative, max), error paths.
+- **Call sites missed** — a renamed function whose other callers weren't
+  updated; a new return shape one consumer doesn't handle.
+- **Tests that don't actually exercise the new behavior** — tests added,
+  but they pass with the old code too.
+- **Docs/README/comments that no longer match** the new behavior.
+
+If the intent is unclear, say so in Notes rather than inventing one.
+
+### 4. Write the report
+
+Use the template below. Severity rules of thumb:
+
+- **Must fix** — bugs, security issues, broken feature completeness, things
+  that will hurt someone (user, maintainer, prod).
+- **Should fix** — clear improvements to quality or minimality that aren't
+  blocking but should be addressed before merging.
+- **Nit** — style, naming, minor wording. The reader can ignore these
+  without consequence.
+
+Keep findings short. One or two sentences per item is usually enough. The
+file:line lets the reader jump there; don't restate the code.
+
+If a section is empty, omit it. If the whole review finds nothing, say
+that explicitly — a clean review is a useful signal too.
+
+## Report template
+
+```markdown
+# Code review: <one-line scope description>
+
+**Scope:** <e.g. "uncommitted changes — 4 files, +120 -34">
+**Intent:** <quoted commit message phrase, or short inferred summary, or "unclear">
+
+## Must fix
+
+- **<axis>** `<file>:<line>` — <short title>
+  <one or two sentence rationale>
+
+## Should fix
+
+- **<axis>** `<file>:<line>` — <short title>
+  <one or two sentence rationale>
+
+## Nit
+
+- **<axis>** `<file>:<line>` — <short title>
+  <one or two sentence rationale>
+
+## Notes
+
+<anything else worth surfacing — e.g. "no security-sensitive surfaces touched",
+"tests added cover the change", "two unrelated changes mixed in this diff",
+or omit if there's nothing to say>
+```
+
+Axis tags: `quality`, `minimal`, `security`, `completeness`.
+
+## Don't propose fixes in the report
+
+Report findings, not patches. The user will decide what to act on and ask
+for fixes in follow-up turns. Adding fixes inline turns a review into an
+implementation pass and obscures what was found.
+
+If a fix is genuinely two characters (a typo in a string, a missing close
+paren) and pasting it is shorter than describing it, you can include it —
+but that's the exception.
+
+## What this skill is not
+
+- **Not /ultrareview.** That's a separate cloud-based multi-agent review for
+  branches/PRs. This skill is local, fast, and runs inline in the
+  conversation.
+- **Not a full security audit.** It catches obvious mistakes; it doesn't
+  replace a real security review for sensitive code paths.
+- **Not auto-fix.** Findings only.
+- **Not a substitute for tests.** A passing review doesn't mean the code is
+  correct — only that the diff doesn't have visible defects.
+diff --git a/examples/counter.lg b/examples/counter.lg
+new file mode 100644
+index 0000000..a34f58d
+--- /dev/null
++++ b/examples/counter.lg
+@@ -0,0 +1,30 @@
++;; Stage 2 demo: a tiny interactive counter.
++;;
++;; Run from the repo root: LG_SOURCE_PATHS=src lg examples/counter.lg
++
++(ns examples.counter
++  (:require [tiny-tui.core :as tui]
++            [tiny-tui.help :as help]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.style :as style]))
++
++(defn -main []
++  (let [result (tui/run
++                {:init {:count 0}
++                 :update (fn [state msg]
++                           (case msg
++                             :up [(update state :count inc) nil]
++                             :down [(update state :count dec) nil]
++                             "q" [state :quit]
++                             [state nil]))
++                 :view (fn [state]
++                         (layout/vstack
++                          (style/bold "Counter")
++                          ""
++                          (str "Count: " (:count state))
++                          ""
++                          (help/view [{:key "↑/↓" :label "change"}
++                                      {:key "q" :label "quit"}])))})]
++    (println "Final count:" (:count (first result)))))
++
++(when-not *compiling-aot* (-main))
+diff --git a/examples/static_screen.lg b/examples/static_screen.lg
+new file mode 100644
+index 0000000..b8e67f5
+--- /dev/null
++++ b/examples/static_screen.lg
+@@ -0,0 +1,24 @@
++;; Stage 1 demo: a static styled screen, no interaction.
++;;
++;; Run from the repo root: LG_SOURCE_PATHS=src lg examples/static_screen.lg
++
++(ns examples.static-screen
++  (:require [term]
++            [tiny-tui.screen :as screen]
++            [tiny-tui.style :as style]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.help :as help]))
++
++(defn -main []
++  (screen/with-screen
++    (screen/render!
++     (layout/vstack
++      (layout/box (style/bold (style/fg :cyan "Projects")))
++      ""
++      "No interaction yet."
++      ""
++      (help/view [{:key "any key" :label "quit"}])))
++    (term/read-key))
++  (println "Bye."))
++
++(when-not *compiling-aot* (-main))
+diff --git a/src/tiny_tui/core.lg b/src/tiny_tui/core.lg
+index f6ef06a..6652984 100644
+--- a/src/tiny_tui/core.lg
++++ b/src/tiny_tui/core.lg
+@@ -1,5 +1,47 @@
+-(ns tiny-tui.core)
++;; tiny-tui.core — the public API.
++;;
++;; run: the minimal program loop. An app is three things:
++;;   :init   initial state (a map)
++;;   :update (fn [state msg] [new-state event]) — nil event keeps looping,
++;;           any non-nil event stops the loop
++;;   :view   (fn [state] string)
++;;
++;; run returns [final-state event]. It handles :ctrl-c itself (returns
++;; event :ctrl-c without consulting :update) and treats :resize as a plain
++;; redraw. Terminal size is injected as :tui/size before every view call.
++;;
++;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
++;; they let whole flows run headlessly with scripted keys.
+ 
+-(defn greet
+-  [name]
+-  (str "Welcome to " name "!"))
++(ns tiny-tui.core
++  (:require [term]
++            [tiny-tui.key :as key]
++            [tiny-tui.screen :as screen]))
++
++(defn- run-loop [opts]
++  (let [update-fn (:update opts)
++        view (:view opts)
++        read-key-fn (or (:read-key-fn opts) key/read)
++        render-fn (or (:render-fn opts) screen/render!)]
++    (loop [state (:init opts)]
++      (let [state (assoc state :tui/size (or (term/size) [80 24]))]
++        (render-fn (view state))
++        (let [msg (read-key-fn)]
++          (cond
++            (nil? msg) [state nil]
++            (= msg :ctrl-c) [state :ctrl-c]
++            (= msg :resize) (recur state)
++            :else (let [result (update-fn state msg)
++                        next-state (first result)
++                        event (second result)]
++                    (if (nil? event)
++                      (recur next-state)
++                      [next-state event]))))))))
++
++(defn run
++  "Run a TUI program (see namespace docstring). Returns [final-state event]."
++  [opts]
++  (if (false? (:screen opts))
++    (run-loop opts)
++    (screen/with-screen
++      (run-loop opts))))
+diff --git a/src/tiny_tui/help.lg b/src/tiny_tui/help.lg
+new file mode 100644
+index 0000000..6c33e12
+--- /dev/null
++++ b/src/tiny_tui/help.lg
+@@ -0,0 +1,13 @@
++;; tiny-tui.help — render a one-line help bar from key bindings.
++
++(ns tiny-tui.help
++  (:require [string]
++            [tiny-tui.style :as style]))
++
++(defn view
++  "bindings: [{:key \"q\" :label \"quit\"} ...] ->
++   \"q quit   enter select\" with keys bold and labels dim."
++  [bindings]
++  (string/join "   "
++               (map (fn [b] (str (style/bold (:key b)) " " (style/dim (:label b))))
++                    bindings)))
+diff --git a/src/tiny_tui/key.lg b/src/tiny_tui/key.lg
+new file mode 100644
+index 0000000..ae76f76
+--- /dev/null
++++ b/src/tiny_tui/key.lg
+@@ -0,0 +1,53 @@
++;; tiny-tui.key — translate raw terminal input into simple messages:
++;; keywords for special keys (:up :down :enter :esc :ctrl-c ...), plain
++;; one-character strings for printable text.
++;;
++;; Only `read` touches the terminal; `parse` is pure and unit-tested.
++;; Control bytes are built with (char code) rather than written literally
++;; in source (mirrors legmacs.keys).
++
++(ns tiny-tui.key
++  (:require [term]))
++
++(def ^:private ESC (str (char 27)))
++
++(def ^:private special
++  (into {}
++        (concat
++          (map (fn [pair] [(str ESC (first pair)) (second pair)])
++               [["[A" :up] ["OA" :up]
++                ["[B" :down] ["OB" :down]
++                ["[C" :right] ["OC" :right]
++                ["[D" :left] ["OD" :left]
++                ["[H" :home] ["OH" :home] ["[1~" :home] ["[7~" :home]
++                ["[F" :end] ["OF" :end] ["[4~" :end] ["[8~" :end]
++                ["[3~" :delete]
++                ["[5~" :pageup]
++                ["[6~" :pagedown]])
++          [[(str (char 13)) :enter]
++           [(str (char 9)) :tab]
++           [(str (char 127)) :backspace]
++           [ESC :esc]
++           [(str (char 0)) :ctrl-space]
++          ;; BEL is term/read-key's synthetic resize wake-up, and also a
++          ;; genuine Ctrl-G — indistinguishable by design. Treating both as
++          ;; :resize is harmless: the loop just redraws.
++           [(str (char 7)) :resize]])))
++
++(defn- ctrl-key [code]
++  (keyword (str "ctrl-" (char (+ code 96)))))
++
++(defn parse
++  "Translate one term/read-key token into a message. Printable text passes
++   through unchanged."
++  [k]
++  (let [code (when (= 1 (count k)) (int (first (seq k))))]
++    (cond
++      (contains? special k) (get special k)
++      (and code (<= 1 code 26)) (ctrl-key code)
++      :else k)))
++
++(defn read
++  "Block for one key. Returns a message, or nil at end of input."
++  []
++  (some-> (term/read-key) parse))
+diff --git a/src/tiny_tui/layout.lg b/src/tiny_tui/layout.lg
+new file mode 100644
+index 0000000..ce8e6e1
+--- /dev/null
++++ b/src/tiny_tui/layout.lg
+@@ -0,0 +1,41 @@
++;; tiny-tui.layout — pure string layout helpers. All measurements use
++;; style/visible-width so styled text lays out correctly.
++
++(ns tiny-tui.layout
++  (:require [string]
++            [tiny-tui.style :as style]))
++
++(defn lines
++  [s]
++  (let [ls (string/split s "\n")]
++    (if (empty? ls) [""] (vec ls))))
++
++(defn vstack
++  "Stack blocks vertically, skipping nils. Blocks may be multi-line."
++  [& blocks]
++  (string/join "\n" (remove nil? blocks)))
++
++(defn hstack
++  "Join strings on one line, with `sep` (default two spaces) between them."
++  ([xs] (hstack "  " xs))
++  ([sep xs] (string/join sep xs)))
++
++(defn pad
++  "Right-pad `s` with spaces to visible width `w`."
++  [s w]
++  (let [n (- w (style/visible-width s))]
++    (if (pos? n)
++      (str s (apply str (repeat n " ")))
++      s)))
++
++(defn box
++  "Draw a box around (possibly multi-line, possibly styled) `content`,
++   sized to the widest visible line with one space of inner padding."
++  [content]
++  (let [ls (lines content)
++        w (apply max (map style/visible-width ls))
++        bar (apply str (repeat (+ 2 w) "─"))]
++    (string/join "\n"
++                 (concat [(str "┌" bar "┐")]
++                         (map #(str "│ " (pad % w) " │") ls)
++                         [(str "└" bar "┘")]))))
+diff --git a/src/tiny_tui/screen.lg b/src/tiny_tui/screen.lg
+index 8fb67e4..30e5fde 100644
+--- a/src/tiny_tui/screen.lg
++++ b/src/tiny_tui/screen.lg
+@@ -55,7 +55,7 @@
+     (term/clear)
+     (term/flush)
+     (catch e
+-      (shutdown!)
++           (shutdown!)
+       (throw e))))
+ 
+ (defn render!
+diff --git a/src/tiny_tui/style.lg b/src/tiny_tui/style.lg
+new file mode 100644
+index 0000000..2c289a4
+--- /dev/null
++++ b/src/tiny_tui/style.lg
+@@ -0,0 +1,83 @@
++;; tiny-tui.style — pure ANSI text styling. Every function takes text and
++;; returns text wrapped in SGR escape sequences; nothing here touches the
++;; terminal (term/set-fg etc. write directly to stdout, which is the wrong
++;; shape for string-based views).
++;;
++;; Named colors use the portable 16-color codes; an integer color is passed
++;; through as 256-color. Escape bytes are built with (char 27), never
++;; written literally in source.
++
++(ns tiny-tui.style
++  (:require [string]))
++
++(def ^:private ESC (str (char 27)))
++(def ^:private esc-char (char 27))
++(def ^:private reset (str ESC "[0m"))
++
++(def ^:private color-codes
++  {:black 30
++   :red 31
++   :green 32
++   :yellow 33
++   :blue 34
++   :magenta 35
++   :cyan 36
++   :white 37
++   :bright-black 90
++   :bright-red 91
++   :bright-green 92
++   :bright-yellow 93
++   :bright-blue 94
++   :bright-magenta 95
++   :bright-cyan 96
++   :bright-white 97})
++
++(defn- fg-code [c]
++  (if (keyword? c)
++    (str (get color-codes c))
++    (str "38;5;" c)))
++
++(defn- bg-code [c]
++  (if (keyword? c)
++    (str (+ 10 (get color-codes c)))
++    (str "48;5;" c)))
++
++(defn- sgr [codes s]
++  (if (empty? codes)
++    s
++    (str ESC "[" (string/join ";" codes) "m" s reset)))
++
++(defn bold [s] (sgr ["1"] s))
++(defn dim [s] (sgr ["2"] s))
++(defn inverse [s] (sgr ["7"] s))
++(defn fg [c s] (sgr [(fg-code c)] s))
++(defn bg [c s] (sgr [(bg-code c)] s))
++
++(defn styled
++  "Apply several attributes at once as a single SGR sequence.
++   attrs: {:bold? :dim? :inverse? :fg :bg}"
++  [attrs s]
++  (sgr (remove nil?
++               [(when (:bold? attrs) "1")
++                (when (:dim? attrs) "2")
++                (when (:inverse? attrs) "7")
++                (when-let [c (:fg attrs)] (fg-code c))
++                (when-let [c (:bg attrs)] (bg-code c))])
++       s))
++
++(defn strip
++  "Remove all ESC[...m sequences, leaving the visible text."
++  [s]
++  (loop [cs (seq s) out []]
++    (if (empty? cs)
++      (apply str out)
++      (let [c (first cs)]
++        (if (= c esc-char)
++          (recur (rest (drop-while #(not= % \m) cs)) out)
++          (recur (rest cs) (conj out c)))))))
++
++(defn visible-width
++  "Display width of `s` ignoring escape sequences. Counts characters —
++   wide-rune handling is out of scope for V1."
++  [s]
++  (count (strip s)))
+diff --git a/test/tiny_tui/core_test.lg b/test/tiny_tui/core_test.lg
+index 37dc0ac..dbd5ae8 100644
+--- a/test/tiny_tui/core_test.lg
++++ b/test/tiny_tui/core_test.lg
+@@ -1,6 +1,81 @@
+-(ns tiny-tui.greeter-test
++(ns tiny-tui.core-test
+   (:require [clojure.test :refer :all]
+-            [tiny-tui.core :as c]))
++            [tiny-tui.core :as tui]))
+ 
+-(deftest test-greet-ok
+-  (is (= "Welcome to let-go!" (c/greet "let-go"))))
++(defn scripted
++  "Read-fn that returns the scripted messages one by one, then nil (EOF)."
++  [msgs]
++  (let [q (atom (seq msgs))]
++    (fn []
++      (let [m (first @q)]
++        (swap! q rest)
++        m))))
++
++(defn counter-app [frames]
++  {:init {:count 0}
++   :update (fn [state msg]
++             (case msg
++               :up [(update state :count inc) nil]
++               :down [(update state :count dec) nil]
++               "q" [state :quit]
++               [state nil]))
++   :view (fn [state] (str "Count: " (:count state)))
++   :render-fn (fn [s] (swap! frames conj s))
++   :screen false})
++
++(deftest test-run-counter
++  (let [frames (atom [])
++        [state event] (tui/run (assoc (counter-app frames)
++                                      :read-key-fn (scripted [:up :up :down "q"])))]
++    (is (= 1 (:count state)))
++    (is (= :quit event))
++    ;; one frame per loop iteration: initial + after each of the 3 moves
++    (is (= 4 (count @frames)))
++    (is (= "Count: 1" (last @frames)))))
++
++(deftest test-run-ctrl-c-quits-without-update
++  (let [seen (atom [])
++        app {:init {}
++             :update (fn [state msg] (swap! seen conj msg) [state nil])
++             :view (fn [_] "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted [:ctrl-c])}
++        [_ event] (tui/run app)]
++    (is (= :ctrl-c event))
++    (is (= [] @seen))))
++
++(deftest test-run-resize-rerenders-without-update
++  (let [seen (atom [])
++        frames (atom [])
++        app {:init {}
++             :update (fn [state msg] (swap! seen conj msg) [state :quit])
++             :view (fn [_] "x")
++             :render-fn (fn [s] (swap! frames conj s))
++             :screen false
++             :read-key-fn (scripted [:resize "q"])}]
++    (tui/run app)
++    (is (= ["q"] @seen))
++    (is (= 2 (count @frames)))))
++
++(deftest test-run-injects-tui-size
++  (let [sizes (atom [])
++        app {:init {}
++             :update (fn [state _] [state :quit])
++             :view (fn [state] (swap! sizes conj (:tui/size state)) "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted ["q"])}]
++    (tui/run app)
++    (is (= [[80 24]] @sizes))))
++
++(deftest test-run-eof-terminates
++  (let [app {:init {:a 1}
++             :update (fn [state _] [state nil])
++             :view (fn [_] "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted [])}
++        [state event] (tui/run app)]
++    (is (= 1 (:a state)))
++    (is (nil? event))))
+diff --git a/test/tiny_tui/help_test.lg b/test/tiny_tui/help_test.lg
+new file mode 100644
+index 0000000..eed3a46
+--- /dev/null
++++ b/test/tiny_tui/help_test.lg
+@@ -0,0 +1,20 @@
++(ns tiny-tui.help-test
++  (:require [clojure.test :refer :all]
++            [tiny-tui.help :as help]
++            [tiny-tui.style :as style]))
++
++(deftest test-view
++  (is (= (str (style/bold "q") " " (style/dim "quit"))
++         (help/view [{:key "q"
++                      :label "quit"}])))
++  (is (= (str (style/bold "↑/↓") " " (style/dim "navigate")
++              "   "
++              (style/bold "enter") " " (style/dim "select")
++              "   "
++              (style/bold "q") " " (style/dim "quit"))
++         (help/view [{:key "↑/↓"
++                      :label "navigate"}
++                     {:key "enter"
++                      :label "select"}
++                     {:key "q"
++                      :label "quit"}]))))
+diff --git a/test/tiny_tui/key_test.lg b/test/tiny_tui/key_test.lg
+new file mode 100644
+index 0000000..d6068f6
+--- /dev/null
++++ b/test/tiny_tui/key_test.lg
+@@ -0,0 +1,38 @@
++(ns tiny-tui.key-test
++  (:require [clojure.test :refer :all]
++            [tiny-tui.key :as key]))
++
++(def ESC (str (char 27)))
++
++(deftest test-parse-arrows
++  (is (= :up (key/parse (str ESC "[A"))))
++  (is (= :up (key/parse (str ESC "OA"))))
++  (is (= :down (key/parse (str ESC "[B"))))
++  (is (= :down (key/parse (str ESC "OB"))))
++  (is (= :right (key/parse (str ESC "[C"))))
++  (is (= :left (key/parse (str ESC "[D")))))
++
++(deftest test-parse-nav-keys
++  (is (= :home (key/parse (str ESC "[H"))))
++  (is (= :home (key/parse (str ESC "[1~"))))
++  (is (= :end (key/parse (str ESC "[F"))))
++  (is (= :end (key/parse (str ESC "[4~"))))
++  (is (= :delete (key/parse (str ESC "[3~")))))
++
++(deftest test-parse-named-keys
++  (is (= :enter (key/parse (str (char 13)))))
++  (is (= :tab (key/parse (str (char 9)))))
++  (is (= :backspace (key/parse (str (char 127)))))
++  (is (= :esc (key/parse ESC))))
++
++(deftest test-parse-control-keys
++  (is (= :ctrl-c (key/parse (str (char 3)))))
++  (is (= :ctrl-a (key/parse (str (char 1)))))
++  (is (= :ctrl-space (key/parse (str (char 0)))))
++  ;; BEL doubles as term/read-key's resize wake-up
++  (is (= :resize (key/parse (str (char 7))))))
++
++(deftest test-parse-printables-pass-through
++  (is (= "q" (key/parse "q")))
++  (is (= "d" (key/parse "d")))
++  (is (= " " (key/parse " "))))
+diff --git a/test/tiny_tui/layout_test.lg b/test/tiny_tui/layout_test.lg
+new file mode 100644
+index 0000000..548cee1
+--- /dev/null
++++ b/test/tiny_tui/layout_test.lg
+@@ -0,0 +1,48 @@
++(ns tiny-tui.layout-test
++  (:require [clojure.test :refer :all]
++            [string]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.style :as style]))
++
++(deftest test-lines
++  (is (= ["one" "two"] (layout/lines "one\ntwo")))
++  (is (= [""] (layout/lines ""))))
++
++(deftest test-vstack
++  (is (= "a\nb\nc" (layout/vstack "a" "b" "c")))
++  (is (= "a\nc" (layout/vstack "a" nil "c")))
++  (is (= "title\nbody line 1\nbody line 2"
++         (layout/vstack "title" "body line 1\nbody line 2"))))
++
++(deftest test-hstack
++  (is (= "a  b  c" (layout/hstack ["a" "b" "c"])))
++  (is (= "a   b" (layout/hstack "   " ["a" "b"]))))
++
++(deftest test-pad
++  (is (= "ab   " (layout/pad "ab" 5)))
++  (is (= "ab" (layout/pad "ab" 2)))
++  ;; padding measures visible width, not raw length
++  (is (= (str (style/bold "ab") "   ")
++         (layout/pad (style/bold "ab") 5))))
++
++(deftest test-box-single-line
++  (is (= (string/join "\n"
++                      ["┌──────────┐"
++                       "│ Projects │"
++                       "└──────────┘"])
++         (layout/box "Projects"))))
++
++(deftest test-box-multi-line
++  (is (= (string/join "\n"
++                      ["┌──────────┐"
++                       "│ Projects │"
++                       "│ hi       │"
++                       "└──────────┘"])
++         (layout/box "Projects\nhi"))))
++
++(deftest test-box-styled-content
++  (is (= (string/join "\n"
++                      ["┌────┐"
++                       (str "│ " (style/bold "ab") " │")
++                       "└────┘"])
++         (layout/box (style/bold "ab")))))
+diff --git a/test/tiny_tui/style_test.lg b/test/tiny_tui/style_test.lg
+new file mode 100644
+index 0000000..6e61961
+--- /dev/null
++++ b/test/tiny_tui/style_test.lg
+@@ -0,0 +1,38 @@
++(ns tiny-tui.style-test
++  (:require [clojure.test :refer :all]
++            [tiny-tui.style :as style]))
++
++(def ESC (str (char 27)))
++(defn sgr [codes s] (str ESC "[" codes "m" s ESC "[0m"))
++
++(deftest test-attrs
++  (is (= (sgr "1" "x") (style/bold "x")))
++  (is (= (sgr "2" "x") (style/dim "x")))
++  (is (= (sgr "7" "x") (style/inverse "x"))))
++
++(deftest test-fg-colors
++  (is (= (sgr "36" "x") (style/fg :cyan "x")))
++  (is (= (sgr "91" "x") (style/fg :bright-red "x")))
++  (is (= (sgr "38;5;208" "x") (style/fg 208 "x"))))
++
++(deftest test-bg-colors
++  (is (= (sgr "46" "x") (style/bg :cyan "x")))
++  (is (= (sgr "101" "x") (style/bg :bright-red "x")))
++  (is (= (sgr "48;5;208" "x") (style/bg 208 "x"))))
++
++(deftest test-nesting
++  (is (= (sgr "1" (sgr "36" "x"))
++         (style/bold (style/fg :cyan "x")))))
++
++(deftest test-styled-combines-codes
++  (is (= (sgr "1;36" "x") (style/styled {:bold? true
++                                         :fg :cyan} "x")))
++  (is (= (sgr "7" "x") (style/styled {:inverse? true} "x")))
++  (is (= "x" (style/styled {} "x"))))
++
++(deftest test-strip-and-visible-width
++  (is (= "x" (style/strip (style/bold "x"))))
++  (is (= "Projects" (style/strip (style/bold (style/fg :cyan "Projects")))))
++  (is (= "plain" (style/strip "plain")))
++  (is (= 8 (style/visible-width (style/fg :cyan "Projects"))))
++  (is (= 0 (style/visible-width ""))))
+
+exec
+/bin/bash -lc "find . -maxdepth 3 -type f | sort && git status --short && git log --oneline -5 && sed -n '1,220p' src/tiny_tui/screen.lg && grep -R \"defn read-key\\|read-key\\|defn size\\|with-screen\\|shutdown\" -n ." in /Users/andrew/Projects/tiny-tui
+ succeeded in 103ms:
+!` succeeds in enabling raw mode but a later setup call such as `term/alternate-screen`, `term/hide-cursor`, `term/clear`, or `term/flush` throws, this macro never enters the `try`, so `shutdown!` is not called and the user's terminal can be left in raw mode. This matters for the advertised safe enter/leave behavior when terminal writes fail during startup.
+./src/tiny_tui/key.lg:32:          ;; BEL is term/read-key's synthetic resize wake-up, and also a
+./src/tiny_tui/key.lg:41:  "Translate one term/read-key token into a message. Printable text passes
+./src/tiny_tui/key.lg:53:  (some-> (term/read-key) parse))
+./src/tiny_tui/core.lg:13:;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
+./src/tiny_tui/core.lg:24:        read-key-fn (or (:read-key-fn opts) key/read)
+./src/tiny_tui/core.lg:29:        (let [msg (read-key-fn)]
+./src/tiny_tui/core.lg:46:    (screen/with-screen
+./src/tiny_tui/screen.lg:33:(defn shutdown!
+./src/tiny_tui/screen.lg:58:           (shutdown!)
+./src/tiny_tui/screen.lg:72:(defmacro with-screen
+./src/tiny_tui/screen.lg:80:              (list 'finally (list 'tiny-tui.screen/shutdown!)))))
+
+exec
+/bin/bash -lc 'cat README.md lgx.edn main.lg test/tiny_tui/screen_test.lg && (lg -source-paths src:test -m clojure.test tiny-tui.core-test tiny-tui.key-test tiny-tui.style-test tiny-tui.layout-test tiny-tui.help-test tiny-tui.screen-test 2>&1 || true)' in /Users/andrew/Projects/tiny-tui
+ succeeded in 246ms:
+flag provided but not defined: -m
+Usage of /home/agent.guest/.local/share/mise/installs/lg/1.11.1/lg:
+  -b string
+    	bundle .lg file into a standalone executable (specify output path)
+  -bundle-base string
+    	path to target-platform lg binary for cross-OS bundling (defaults to current executable)
+  -c string
+    	compile .lg file to .lgb bytecode (specify output path)
+  -d	enable VM debug mode
+  -e string
+    	eval given expression
+  -n	enable nREPL server
+  -p int
+    	set nREPL port, default is 2137 (default 2137)
+  -r	attach REPL after running given files
+  -resource-paths string
+    	resource root directories for io/resource, separated by the OS path-list separator (':' on Unix, ';' on Windows). Falls back to LG_RESOURCE_PATHS if unset. With -b, resources under these roots are embedded in the binary.
+  -source-paths string
+    	namespace search paths separated by the OS path-list separator (':' on Unix, ';' on Windows). When given, fully defines the search path: the current directory is NOT searched implicitly — include '.' to search it. Falls back to LG_SOURCE_PATHS if unset. If flag or env var not given, it defaults to '.'
+  -storage-id string
+    	logical storage store id for the storage namespace (default: script name, or current directory for main.lg)
+  -v	print version and exit
+  -version
+    	print version and exit
+  -w string
+    	build .lg file into a WASM web app (specify output directory)
+  -w-host-eval
+    	for -w: expose LetGoHost.eval(code) to call into the loaded image and keep it live (park after the program's main returns); works in both boot modes. Pair with -w-shell none
+  -w-shell string
+    	shell for -w: 'xterm' (default) or 'none' (emit core only; client supplies its own shell via window.LetGoHost) (default "xterm")
+  -w-wasm string
+    	wasm delivery for -w: 'inline' (default; gzip-base64 baked into index.html) or 'external' (emit a separate main.wasm the loader fetches + streams) (default "inline")
+
+exec
+/bin/bash -lc 'lgx test 2>&1 || true' in /Users/andrew/Projects/tiny-tui
+ succeeded in 136ms:
+test/tiny_tui/core_test.lg
+  [38;5;35m✓[0m test-run-counter
+  [38;5;35m✓[0m test-run-ctrl-c-quits-without-update
+  [38;5;35m✓[0m test-run-resize-rerenders-without-update
+  [38;5;35m✓[0m test-run-injects-tui-size
+  [38;5;35m✓[0m test-run-eof-terminates
+
+test/tiny_tui/help_test.lg
+  [38;5;35m✓[0m test-view
+
+test/tiny_tui/key_test.lg
+  [38;5;35m✓[0m test-parse-arrows
+  [38;5;35m✓[0m test-parse-nav-keys
+  [38;5;35m✓[0m test-parse-named-keys
+  [38;5;35m✓[0m test-parse-control-keys
+  [38;5;35m✓[0m test-parse-printables-pass-through
+
+test/tiny_tui/layout_test.lg
+  [38;5;35m✓[0m test-lines
+  [38;5;35m✓[0m test-vstack
+  [38;5;35m✓[0m test-hstack
+  [38;5;35m✓[0m test-pad
+  [38;5;35m✓[0m test-box-single-line
+  [38;5;35m✓[0m test-box-multi-line
+  [38;5;35m✓[0m test-box-styled-content
+
+test/tiny_tui/screen_test.lg
+  [38;5;35m✓[0m test-frame-str-single-line
+  [38;5;35m✓[0m test-frame-str-multi-line
+  [38;5;35m✓[0m test-frame-str-empty-string
+
+test/tiny_tui/style_test.lg
+  [38;5;35m✓[0m test-attrs
+  [38;5;35m✓[0m test-fg-colors
+  [38;5;35m✓[0m test-bg-colors
+  [38;5;35m✓[0m test-nesting
+  [38;5;35m✓[0m test-styled-combines-codes
+  [38;5;35m✓[0m test-strip-and-visible-width
+
+[38;5;35m27 tests, 69 assertions, 0 failures[0m
+OK
+
+exec
+/bin/bash -lc "sed -n '280,330p' docs/plans/2026-07-01-tiny-tui-v1.md && sed -n '330,380p' docs/plans/2026-07-01-tiny-tui-v1.md" in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+  only when using the real reader, so scripted tests inject post-parse
+  messages). Tests:
+  - Counter app: script `[:up :up :down "q"]` where update returns `:quit` on
+    `"q"` → result `[{:count 1 …} :quit]`, and 4 frames rendered.
+  - `:ctrl-c` terminates immediately with event `:ctrl-c`, `update` never
+    called for it.
+  - `:resize` re-renders without calling `update`.
+  - `:tui/size` is present in the state each `view` call sees (default
+    `[80 24]` when `:screen false`).
+  - nil from read-fn (EOF) terminates with event nil.
+
+- [ ] **Step 3: Run tests to verify they fail**
+  Run: `lgx test`
+  Expected: FAIL.
+
+- [ ] **Step 4: Implement `key` and `core/run`**
+  `key/parse` pure; `key/read` = `(some-> (term/read-key) parse)`. `core/run`
+  per Key decisions 5–7: loop render → read → dispatch; non-nil event exits
+  returning `[state event]`; wrap the loop in `screen/with-screen` unless
+  `:screen false`.
+
+- [ ] **Step 5: Run tests to verify they pass**
+  Run: `lgx test`
+  Expected: PASS (greet test now gone).
+
+- [ ] **Step 6: Write `examples/counter.lg` and verify manually**
+  The design doc's Stage 2 counter, built on `tui/run` + `help/view`.
+  Run: `lg examples/counter.lg`
+  Expected: ↑/↓ changes the count live, `q` quits, terminal restored; Ctrl-C
+  also exits cleanly.
+
+- [ ] **Step 7: Format and commit**
+  Run: `lgx fmt && lgx test`
+  `git commit -m "Add key parsing and core run loop"`
+
+### Task 4: Stage 3 — list widget (`tiny-tui.list`)
+
+**Files:**
+- Create: `src/tiny_tui/list.lg`
+- Create: `test/tiny_tui/list_test.lg`
+
+- [ ] **Step 1: Write failing tests**
+  - `create` with `{:items […] :item->text :name}` → cursor at 0;
+    `selected-index`/`selected-item` reflect it.
+  - `update` `:down`/`:up` move the cursor and clamp at bounds (never
+    negative, never past the last item); each returns `[state nil]`.
+  - `update` `:enter` → `[state {:type :select :item i :index n}]`.
+  - `update` `"q"` and `:esc` → `[state {:type :cancel}]`.
+  - Unknown message → `[state nil]` unchanged.
+  - `view`: cursor line prefixed `› `, others two spaces; selected line
+    inverse-styled; string-compare full output for a 3-item list.
+    inverse-styled; string-compare full output for a 3-item list.
+  - Empty list: `view` renders the `:empty-text` (default "No items."),
+    `:enter` returns no event, `selected-item` nil.
+  - `:item->text` defaults to `str`.
+
+- [ ] **Step 2: Run tests to verify they fail**
+  Run: `lgx test`
+  Expected: FAIL.
+
+- [ ] **Step 3: Implement `tiny-tui.list`**
+  State map holds config + `:cursor`. No pagination, no scrolling (per
+  design-doc non-goals).
+
+- [ ] **Step 4: Run tests to verify they pass**
+  Run: `lgx test`
+  Expected: PASS.
+
+- [ ] **Step 5: Format and commit**
+  Run: `lgx fmt && lgx test`
+  `git commit -m "Add pure list widget"`
+
+### Task 5: Stage 4 — `tui/select`
+
+**Files:**
+- Modify: `src/tiny_tui/core.lg` (add `select`)
+- Modify: `test/tiny_tui/core_test.lg`
+- Create: `examples/select_project.lg`
+- Modify: `main.lg` (demo becomes a `tui/select` call)
+
+- [ ] **Step 1: Write failing tests**
+  Headless via `run`'s hooks (`select` must forward `:read-key-fn`/
+  `:render-fn`/`:screen` opts to `run` for this):
+  - Script `[:down :enter]` over 3 items → `{:type :select :item <2nd> :index 1}`.
+  - Script `["q"]` → `{:type :cancel}`; `[:esc]` → `{:type :cancel}`;
+    `[:ctrl-c]` → `{:type :cancel}`.
+  - Rendered frame contains the bold title, the list, and the help line
+    "↑/↓ navigate   enter select   q quit" (from `help/view`).
+
+- [ ] **Step 2: Run tests to verify they fail**
+  Run: `lgx test`
+  Expected: FAIL.
+
+- [ ] **Step 3: Implement `select`**
+  `init` = `{:list (list/create opts)}`; `update` routes messages to
+  `list/update`, bubbles terminal events; `view` = vstack of styled title,
+  blank line, `list/view`, blank line, `help/view`. Translate `run`'s
+  `:ctrl-c`/nil terminations to `{:type :cancel}`.
+
+- [ ] **Step 4: Run tests to verify they pass**
+  Run: `lgx test`
+  Expected: PASS.
+
+exec
+/bin/bash -lc "grep -R \"visible-width\\|style/strip\\|fg\\|layout/lines\" -n docs src test examples README.md" in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+docs/plans/2026-07-01-tiny-tui-v1.md:31:Note: `term/set-fg`, `term/bold` etc. **write escape codes directly to stdout** —
+docs/plans/2026-07-01-tiny-tui-v1.md:41:1. **Style builds ANSI strings in-library.** `style/fg` etc. wrap text in SGR
+docs/plans/2026-07-01-tiny-tui-v1.md:44:   (30–37 fg, 90–97 bright fg, 40–47/100–107 bg); an integer color passes
+docs/plans/2026-07-01-tiny-tui-v1.md:128:  style.lg      ANSI text styling: fg, bg, bold, dim, inverse, styled, strip, visible-width  (pure)
+docs/plans/2026-07-01-tiny-tui-v1.md:218:  - `(style/fg :cyan "x")` → SGR 36; `(style/fg :bright-red "x")` → 91;
+docs/plans/2026-07-01-tiny-tui-v1.md:219:    `(style/fg 208 "x")` → `38;5;208`; `bg` analogous (46 / 101 / `48;5;208`).
+docs/plans/2026-07-01-tiny-tui-v1.md:220:  - Nesting works: `(style/bold (style/fg :cyan "x"))`.
+docs/plans/2026-07-01-tiny-tui-v1.md:221:  - `(style/strip styled)` returns plain text; `(style/visible-width styled)`
+docs/plans/2026-07-01-tiny-tui-v1.md:241:  scan for ESC, skip to `m`); `visible-width` = `count` of `strip`. `layout`
+docs/plans/2026-07-01-tiny-tui-v1.md:242:  and `help` per the tests; `box`/`pad` measure with `style/visible-width`.
+docs/tiny-tui-initial-design.md:123:  fg
+docs/tiny-tui-initial-design.md:267:(style/fg :cyan "Projects")
+docs/tiny-tui-initial-design.md:276:(style/bold (style/fg :cyan "Projects"))
+src/tiny_tui/layout.lg:2:;; style/visible-width so styled text lays out correctly.
+src/tiny_tui/layout.lg:26:  (let [n (- w (style/visible-width s))]
+src/tiny_tui/layout.lg:36:        w (apply max (map style/visible-width ls))
+src/tiny_tui/style.lg:3:;; terminal (term/set-fg etc. write directly to stdout, which is the wrong
+src/tiny_tui/style.lg:35:(defn- fg-code [c]
+src/tiny_tui/style.lg:53:(defn fg [c s] (sgr [(fg-code c)] s))
+src/tiny_tui/style.lg:58:   attrs: {:bold? :dim? :inverse? :fg :bg}"
+src/tiny_tui/style.lg:64:                (when-let [c (:fg attrs)] (fg-code c))
+src/tiny_tui/style.lg:79:(defn visible-width
+test/tiny_tui/style_test.lg:13:(deftest test-fg-colors
+test/tiny_tui/style_test.lg:14:  (is (= (sgr "36" "x") (style/fg :cyan "x")))
+test/tiny_tui/style_test.lg:15:  (is (= (sgr "91" "x") (style/fg :bright-red "x")))
+test/tiny_tui/style_test.lg:16:  (is (= (sgr "38;5;208" "x") (style/fg 208 "x"))))
+test/tiny_tui/style_test.lg:25:         (style/bold (style/fg :cyan "x")))))
+test/tiny_tui/style_test.lg:29:                                         :fg :cyan} "x")))
+test/tiny_tui/style_test.lg:33:(deftest test-strip-and-visible-width
+test/tiny_tui/style_test.lg:34:  (is (= "x" (style/strip (style/bold "x"))))
+test/tiny_tui/style_test.lg:35:  (is (= "Projects" (style/strip (style/bold (style/fg :cyan "Projects")))))
+test/tiny_tui/style_test.lg:36:  (is (= "plain" (style/strip "plain")))
+test/tiny_tui/style_test.lg:37:  (is (= 8 (style/visible-width (style/fg :cyan "Projects"))))
+test/tiny_tui/style_test.lg:38:  (is (= 0 (style/visible-width ""))))
+test/tiny_tui/layout_test.lg:8:  (is (= ["one" "two"] (layout/lines "one\ntwo")))
+test/tiny_tui/layout_test.lg:9:  (is (= [""] (layout/lines ""))))
+examples/static_screen.lg:16:      (layout/box (style/bold (style/fg :cyan "Projects")))
+
+exec
+/bin/bash -lc "sed -n '35,52p' docs/plans/2026-07-01-tiny-tui-v1.md && sed -n '210,246p' docs/plans/2026-07-01-tiny-tui-v1.md" in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+`term/read-key` returns string tokens: full escape sequences arrive as a single
+token (e.g. ESC + `[A` for the up arrow), lone ESC as just ESC, printables as
+one-character strings.
+
+### Key decisions
+
+1. **Style builds ANSI strings in-library.** `style/fg` etc. wrap text in SGR
+   sequences built with `(char 27)` — never literal control characters in
+   source (see Gotchas). Named colors map to portable 16-color SGR codes
+   (30–37 fg, 90–97 bright fg, 40–47/100–107 bg); an integer color passes
+   through as 256-color (`38;5;N` / `48;5;N`).
+2. **Key messages** are keywords for special keys (`:up` `:down` `:left`
+   `:right` `:enter` `:tab` `:esc` `:backspace` `:delete` `:home` `:end`
+   `:ctrl-a`…`:ctrl-z` including `:ctrl-c`) and one-character strings for
+   printables (`"q"`, `"d"`). Byte 7 (BEL) is `term/read-key`'s resize
+   wake-up *and* a literal Ctrl-G — map it to `:resize`, which every loop
+   treats as a no-op redraw. No Alt/meta combos in V1 (a lone ESC token is
+   just `:esc`).
+
+**Files:**
+- Create: `src/tiny_tui/style.lg`, `src/tiny_tui/layout.lg`, `src/tiny_tui/help.lg`
+- Create: `test/tiny_tui/style_test.lg`, `test/tiny_tui/layout_test.lg`, `test/tiny_tui/help_test.lg`
+- Create: `examples/static_screen.lg`
+
+- [ ] **Step 1: Write failing tests for `style`**
+  - `(style/bold "x")` wraps in SGR 1 + reset; `dim` → 2; `inverse` → 7.
+  - `(style/fg :cyan "x")` → SGR 36; `(style/fg :bright-red "x")` → 91;
+    `(style/fg 208 "x")` → `38;5;208`; `bg` analogous (46 / 101 / `48;5;208`).
+  - Nesting works: `(style/bold (style/fg :cyan "x"))`.
+  - `(style/strip styled)` returns plain text; `(style/visible-width styled)`
+    counts visible chars only.
+
+- [ ] **Step 2: Write failing tests for `layout` and `help`**
+  - `lines` splits a string; `vstack` joins blocks with newlines (variadic,
+    skips nils); `hstack` joins strings with a separator (default two spaces).
+  - `pad` right-pads to a visible width (styled input padded correctly).
+  - `box` draws `┌─┐│└┘` sized to the widest visible line, one space of inner
+    padding; multi-line content; styled content sized by visible width.
+  - `(help/view [{:key "q" :label "quit"} …])` →
+    `"q quit   enter select"`-style single line (three-space separator),
+    key rendered bold, label dim.
+
+- [ ] **Step 3: Run tests to verify they fail**
+  Run: `lgx test`
+  Expected: FAIL (namespaces not found).
+
+- [ ] **Step 4: Implement `style`, `layout`, `help`**
+  `style`: color-name→code maps, `sgr` helper wrapping text as
+  `ESC[<codes>m<text>ESC[0m`; `strip` removes `ESC[…m` runs (no regex needed:
+  scan for ESC, skip to `m`); `visible-width` = `count` of `strip`. `layout`
+  and `help` per the tests; `box`/`pad` measure with `style/visible-width`.
+
+- [ ] **Step 5: Run tests to verify they pass**
+  Run: `lgx test`
+  Expected: PASS.
+
+exec
+/bin/bash -lc 'git show --stat --oneline --decorate --no-renames 71599287e1187a39ac6aa48920a92be1b2d2b652..HEAD && git diff -U80 71599287e1187a39ac6aa48920a92be1b2d2b652 -- src/tiny_tui/core.lg src/tiny_tui/key.lg src/tiny_tui/style.lg src/tiny_tui/layout.lg src/tiny_tui/help.lg' in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+a7d160d (HEAD -> master) Add pure list widget
+ src/tiny_tui/list.lg       | 57 +++++++++++++++++++++++++++++++++++
+ test/tiny_tui/list_test.lg | 75 ++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 132 insertions(+)
+37a8f58 Add key parsing and core run loop
+ examples/counter.lg        | 30 +++++++++++++++++
+ src/tiny_tui/core.lg       | 50 +++++++++++++++++++++++++---
+ src/tiny_tui/key.lg        | 53 +++++++++++++++++++++++++++++
+ test/tiny_tui/core_test.lg | 83 +++++++++++++++++++++++++++++++++++++++++++---
+ test/tiny_tui/key_test.lg  | 38 +++++++++++++++++++++
+ 5 files changed, 246 insertions(+), 8 deletions(-)
+b654fc6 Add style, layout and help rendering primitives
+ examples/static_screen.lg    | 24 +++++++++++++
+ src/tiny_tui/help.lg         | 13 +++++++
+ src/tiny_tui/layout.lg       | 41 ++++++++++++++++++++++
+ src/tiny_tui/style.lg        | 83 ++++++++++++++++++++++++++++++++++++++++++++
+ test/tiny_tui/help_test.lg   | 20 +++++++++++
+ test/tiny_tui/layout_test.lg | 48 +++++++++++++++++++++++++
+ test/tiny_tui/style_test.lg  | 38 ++++++++++++++++++++
+ 7 files changed, 267 insertions(+)
+diff --git a/src/tiny_tui/core.lg b/src/tiny_tui/core.lg
+index f6ef06a..6652984 100644
+--- a/src/tiny_tui/core.lg
++++ b/src/tiny_tui/core.lg
+@@ -1,5 +1,47 @@
+-(ns tiny-tui.core)
++;; tiny-tui.core — the public API.
++;;
++;; run: the minimal program loop. An app is three things:
++;;   :init   initial state (a map)
++;;   :update (fn [state msg] [new-state event]) — nil event keeps looping,
++;;           any non-nil event stops the loop
++;;   :view   (fn [state] string)
++;;
++;; run returns [final-state event]. It handles :ctrl-c itself (returns
++;; event :ctrl-c without consulting :update) and treats :resize as a plain
++;; redraw. Terminal size is injected as :tui/size before every view call.
++;;
++;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
++;; they let whole flows run headlessly with scripted keys.
+ 
+-(defn greet
+-  [name]
+-  (str "Welcome to " name "!"))
++(ns tiny-tui.core
++  (:require [term]
++            [tiny-tui.key :as key]
++            [tiny-tui.screen :as screen]))
++
++(defn- run-loop [opts]
++  (let [update-fn (:update opts)
++        view (:view opts)
++        read-key-fn (or (:read-key-fn opts) key/read)
++        render-fn (or (:render-fn opts) screen/render!)]
++    (loop [state (:init opts)]
++      (let [state (assoc state :tui/size (or (term/size) [80 24]))]
++        (render-fn (view state))
++        (let [msg (read-key-fn)]
++          (cond
++            (nil? msg) [state nil]
++            (= msg :ctrl-c) [state :ctrl-c]
++            (= msg :resize) (recur state)
++            :else (let [result (update-fn state msg)
++                        next-state (first result)
++                        event (second result)]
++                    (if (nil? event)
++                      (recur next-state)
++                      [next-state event]))))))))
++
++(defn run
++  "Run a TUI program (see namespace docstring). Returns [final-state event]."
++  [opts]
++  (if (false? (:screen opts))
++    (run-loop opts)
++    (screen/with-screen
++      (run-loop opts))))
+diff --git a/src/tiny_tui/help.lg b/src/tiny_tui/help.lg
+new file mode 100644
+index 0000000..6c33e12
+--- /dev/null
++++ b/src/tiny_tui/help.lg
+@@ -0,0 +1,13 @@
++;; tiny-tui.help — render a one-line help bar from key bindings.
++
++(ns tiny-tui.help
++  (:require [string]
++            [tiny-tui.style :as style]))
++
++(defn view
++  "bindings: [{:key \"q\" :label \"quit\"} ...] ->
++   \"q quit   enter select\" with keys bold and labels dim."
++  [bindings]
++  (string/join "   "
++               (map (fn [b] (str (style/bold (:key b)) " " (style/dim (:label b))))
++                    bindings)))
+diff --git a/src/tiny_tui/key.lg b/src/tiny_tui/key.lg
+new file mode 100644
+index 0000000..ae76f76
+--- /dev/null
++++ b/src/tiny_tui/key.lg
+@@ -0,0 +1,53 @@
++;; tiny-tui.key — translate raw terminal input into simple messages:
++;; keywords for special keys (:up :down :enter :esc :ctrl-c ...), plain
++;; one-character strings for printable text.
++;;
++;; Only `read` touches the terminal; `parse` is pure and unit-tested.
++;; Control bytes are built with (char code) rather than written literally
++;; in source (mirrors legmacs.keys).
++
++(ns tiny-tui.key
++  (:require [term]))
++
++(def ^:private ESC (str (char 27)))
++
++(def ^:private special
++  (into {}
++        (concat
++          (map (fn [pair] [(str ESC (first pair)) (second pair)])
++               [["[A" :up] ["OA" :up]
++                ["[B" :down] ["OB" :down]
++                ["[C" :right] ["OC" :right]
++                ["[D" :left] ["OD" :left]
++                ["[H" :home] ["OH" :home] ["[1~" :home] ["[7~" :home]
++                ["[F" :end] ["OF" :end] ["[4~" :end] ["[8~" :end]
++                ["[3~" :delete]
++                ["[5~" :pageup]
++                ["[6~" :pagedown]])
++          [[(str (char 13)) :enter]
++           [(str (char 9)) :tab]
++           [(str (char 127)) :backspace]
++           [ESC :esc]
++           [(str (char 0)) :ctrl-space]
++          ;; BEL is term/read-key's synthetic resize wake-up, and also a
++          ;; genuine Ctrl-G — indistinguishable by design. Treating both as
++          ;; :resize is harmless: the loop just redraws.
++           [(str (char 7)) :resize]])))
++
++(defn- ctrl-key [code]
++  (keyword (str "ctrl-" (char (+ code 96)))))
++
++(defn parse
++  "Translate one term/read-key token into a message. Printable text passes
++   through unchanged."
++  [k]
++  (let [code (when (= 1 (count k)) (int (first (seq k))))]
++    (cond
++      (contains? special k) (get special k)
++      (and code (<= 1 code 26)) (ctrl-key code)
++      :else k)))
++
++(defn read
++  "Block for one key. Returns a message, or nil at end of input."
++  []
++  (some-> (term/read-key) parse))
+diff --git a/src/tiny_tui/layout.lg b/src/tiny_tui/layout.lg
+new file mode 100644
+index 0000000..ce8e6e1
+--- /dev/null
++++ b/src/tiny_tui/layout.lg
+@@ -0,0 +1,41 @@
++;; tiny-tui.layout — pure string layout helpers. All measurements use
++;; style/visible-width so styled text lays out correctly.
++
++(ns tiny-tui.layout
++  (:require [string]
++            [tiny-tui.style :as style]))
++
++(defn lines
++  [s]
++  (let [ls (string/split s "\n")]
++    (if (empty? ls) [""] (vec ls))))
++
++(defn vstack
++  "Stack blocks vertically, skipping nils. Blocks may be multi-line."
++  [& blocks]
++  (string/join "\n" (remove nil? blocks)))
++
++(defn hstack
++  "Join strings on one line, with `sep` (default two spaces) between them."
++  ([xs] (hstack "  " xs))
++  ([sep xs] (string/join sep xs)))
++
++(defn pad
++  "Right-pad `s` with spaces to visible width `w`."
++  [s w]
++  (let [n (- w (style/visible-width s))]
++    (if (pos? n)
++      (str s (apply str (repeat n " ")))
++      s)))
++
++(defn box
++  "Draw a box around (possibly multi-line, possibly styled) `content`,
++   sized to the widest visible line with one space of inner padding."
++  [content]
++  (let [ls (lines content)
++        w (apply max (map style/visible-width ls))
++        bar (apply str (repeat (+ 2 w) "─"))]
++    (string/join "\n"
++                 (concat [(str "┌" bar "┐")]
++                         (map #(str "│ " (pad % w) " │") ls)
++                         [(str "└" bar "┘")]))))
+diff --git a/src/tiny_tui/style.lg b/src/tiny_tui/style.lg
+new file mode 100644
+index 0000000..2c289a4
+--- /dev/null
++++ b/src/tiny_tui/style.lg
+@@ -0,0 +1,83 @@
++;; tiny-tui.style — pure ANSI text styling. Every function takes text and
++;; returns text wrapped in SGR escape sequences; nothing here touches the
++;; terminal (term/set-fg etc. write directly to stdout, which is the wrong
++;; shape for string-based views).
++;;
++;; Named colors use the portable 16-color codes; an integer color is passed
++;; through as 256-color. Escape bytes are built with (char 27), never
++;; written literally in source.
++
++(ns tiny-tui.style
++  (:require [string]))
++
++(def ^:private ESC (str (char 27)))
++(def ^:private esc-char (char 27))
++(def ^:private reset (str ESC "[0m"))
++
++(def ^:private color-codes
++  {:black 30
++   :red 31
++   :green 32
++   :yellow 33
++   :blue 34
++   :magenta 35
++   :cyan 36
++   :white 37
++   :bright-black 90
++   :bright-red 91
++   :bright-green 92
++   :bright-yellow 93
++   :bright-blue 94
++   :bright-magenta 95
++   :bright-cyan 96
++   :bright-white 97})
++
++(defn- fg-code [c]
++  (if (keyword? c)
++    (str (get color-codes c))
++    (str "38;5;" c)))
++
++(defn- bg-code [c]
++  (if (keyword? c)
++    (str (+ 10 (get color-codes c)))
++    (str "48;5;" c)))
++
++(defn- sgr [codes s]
++  (if (empty? codes)
++    s
++    (str ESC "[" (string/join ";" codes) "m" s reset)))
++
++(defn bold [s] (sgr ["1"] s))
++(defn dim [s] (sgr ["2"] s))
++(defn inverse [s] (sgr ["7"] s))
++(defn fg [c s] (sgr [(fg-code c)] s))
++(defn bg [c s] (sgr [(bg-code c)] s))
++
++(defn styled
++  "Apply several attributes at once as a single SGR sequence.
++   attrs: {:bold? :dim? :inverse? :fg :bg}"
++  [attrs s]
++  (sgr (remove nil?
++               [(when (:bold? attrs) "1")
++                (when (:dim? attrs) "2")
++                (when (:inverse? attrs) "7")
++                (when-let [c (:fg attrs)] (fg-code c))
++                (when-let [c (:bg attrs)] (bg-code c))])
++       s))
++
++(defn strip
++  "Remove all ESC[...m sequences, leaving the visible text."
++  [s]
++  (loop [cs (seq s) out []]
++    (if (empty? cs)
++      (apply str out)
++      (let [c (first cs)]
++        (if (= c esc-char)
++          (recur (rest (drop-while #(not= % \m) cs)) out)
++          (recur (rest cs) (conj out c)))))))
++
++(defn visible-width
++  "Display width of `s` ignoring escape sequences. Counts characters —
++   wide-rune handling is out of scope for V1."
++  [s]
++  (count (strip s)))
+
+exec
+/bin/bash -lc 'git status --short && git log --oneline -5 && git diff --name-status 71599287e1187a39ac6aa48920a92be1b2d2b652 && git diff -U80 71599287e1187a39ac6aa48920a92be1b2d2b652 -- src/tiny_tui/list.lg test/tiny_tui/list_test.lg src/tiny_tui/core.lg main.lg examples/select_project.lg' in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+ M src/tiny_tui/screen.lg
+ M test/tiny_tui/core_test.lg
+?? .tmp/
+a7d160d Add pure list widget
+37a8f58 Add key parsing and core run loop
+b654fc6 Add style, layout and help rendering primitives
+7159928 Restore terminal when init fails after raw mode; fix example run command
+b618de1 Add screen namespace: safe terminal enter/leave and rendering
+A	examples/counter.lg
+A	examples/static_screen.lg
+M	src/tiny_tui/core.lg
+A	src/tiny_tui/help.lg
+A	src/tiny_tui/key.lg
+A	src/tiny_tui/layout.lg
+A	src/tiny_tui/list.lg
+M	src/tiny_tui/screen.lg
+A	src/tiny_tui/style.lg
+M	test/tiny_tui/core_test.lg
+A	test/tiny_tui/help_test.lg
+A	test/tiny_tui/key_test.lg
+A	test/tiny_tui/layout_test.lg
+A	test/tiny_tui/list_test.lg
+A	test/tiny_tui/style_test.lg
+diff --git a/src/tiny_tui/core.lg b/src/tiny_tui/core.lg
+index f6ef06a..6652984 100644
+--- a/src/tiny_tui/core.lg
++++ b/src/tiny_tui/core.lg
+@@ -1,5 +1,47 @@
+-(ns tiny-tui.core)
++;; tiny-tui.core — the public API.
++;;
++;; run: the minimal program loop. An app is three things:
++;;   :init   initial state (a map)
++;;   :update (fn [state msg] [new-state event]) — nil event keeps looping,
++;;           any non-nil event stops the loop
++;;   :view   (fn [state] string)
++;;
++;; run returns [final-state event]. It handles :ctrl-c itself (returns
++;; event :ctrl-c without consulting :update) and treats :resize as a plain
++;; redraw. Terminal size is injected as :tui/size before every view call.
++;;
++;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
++;; they let whole flows run headlessly with scripted keys.
+ 
+-(defn greet
+-  [name]
+-  (str "Welcome to " name "!"))
++(ns tiny-tui.core
++  (:require [term]
++            [tiny-tui.key :as key]
++            [tiny-tui.screen :as screen]))
++
++(defn- run-loop [opts]
++  (let [update-fn (:update opts)
++        view (:view opts)
++        read-key-fn (or (:read-key-fn opts) key/read)
++        render-fn (or (:render-fn opts) screen/render!)]
++    (loop [state (:init opts)]
++      (let [state (assoc state :tui/size (or (term/size) [80 24]))]
++        (render-fn (view state))
++        (let [msg (read-key-fn)]
++          (cond
++            (nil? msg) [state nil]
++            (= msg :ctrl-c) [state :ctrl-c]
++            (= msg :resize) (recur state)
++            :else (let [result (update-fn state msg)
++                        next-state (first result)
++                        event (second result)]
++                    (if (nil? event)
++                      (recur next-state)
++                      [next-state event]))))))))
++
++(defn run
++  "Run a TUI program (see namespace docstring). Returns [final-state event]."
++  [opts]
++  (if (false? (:screen opts))
++    (run-loop opts)
++    (screen/with-screen
++      (run-loop opts))))
+diff --git a/src/tiny_tui/list.lg b/src/tiny_tui/list.lg
+new file mode 100644
+index 0000000..b644486
+--- /dev/null
++++ b/src/tiny_tui/list.lg
+@@ -0,0 +1,57 @@
++;; tiny-tui.list — a pure list widget. No pagination, no scrolling (V1
++;; non-goals): state in, [state event] out, string view.
++
++(ns tiny-tui.list
++  (:require [string]
++            [tiny-tui.style :as style]))
++
++(defn create
++  "opts: {:items [...] :item->text fn :empty-text \"...\"}"
++  [opts]
++  {:items (vec (:items opts))
++   :item->text (or (:item->text opts) str)
++   :empty-text (or (:empty-text opts) "No items.")
++   :cursor 0})
++
++(defn selected-index [l]
++  (when (seq (:items l))
++    (:cursor l)))
++
++(defn selected-item [l]
++  (when (seq (:items l))
++    (nth (:items l) (:cursor l))))
++
++(defn- move [l delta]
++  (let [n (count (:items l))]
++    (if (zero? n)
++      l
++      (assoc l :cursor (min (dec n) (max 0 (+ (:cursor l) delta)))))))
++
++(defn- select-event [l]
++  (when-let [item (selected-item l)]
++    {:type :select
++     :item item
++     :index (:cursor l)}))
++
++(defn update
++  "Returns [new-state event]. Events: {:type :select ...} on enter,
++   {:type :cancel} on q/esc, nil otherwise."
++  [l msg]
++  (cond
++    (= msg :up) [(move l -1) nil]
++    (= msg :down) [(move l 1) nil]
++    (= msg :enter) [l (select-event l)]
++    (or (= msg "q") (= msg :esc)) [l {:type :cancel}]
++    :else [l nil]))
++
++(defn view [l]
++  (if (empty? (:items l))
++    (:empty-text l)
++    (string/join "\n"
++                 (map-indexed
++                   (fn [i item]
++                     (let [text ((:item->text l) item)]
++                       (if (= i (:cursor l))
++                         (str "› " (style/inverse text))
++                         (str "  " text))))
++                   (:items l)))))
+diff --git a/test/tiny_tui/list_test.lg b/test/tiny_tui/list_test.lg
+new file mode 100644
+index 0000000..5b82648
+--- /dev/null
++++ b/test/tiny_tui/list_test.lg
+@@ -0,0 +1,75 @@
++(ns tiny-tui.list-test
++  (:require [clojure.test :refer :all]
++            [string]
++            [tiny-tui.list :as tlist]
++            [tiny-tui.style :as style]))
++
++(def projects
++  [{:name "tiny-cli"} {:name "tiny-tui"} {:name "lgx"}])
++
++(defn make []
++  (tlist/create {:items projects
++                 :item->text :name}))
++
++(deftest test-create
++  (let [l (make)]
++    (is (= 0 (tlist/selected-index l)))
++    (is (= {:name "tiny-cli"} (tlist/selected-item l)))))
++
++(deftest test-cursor-moves-and-clamps
++  (let [l (make)
++        down (fn [l] (first (tlist/update l :down)))
++        up (fn [l] (first (tlist/update l :up)))]
++    (is (= 1 (tlist/selected-index (down l))))
++    (is (= {:name "tiny-tui"} (tlist/selected-item (down l))))
++    ;; clamped at the bottom
++    (is (= 2 (tlist/selected-index (down (down (down (down l)))))))
++    ;; clamped at the top
++    (is (= 0 (tlist/selected-index (up l))))
++    ;; moving returns no event
++    (is (= nil (second (tlist/update l :down))))))
++
++(deftest test-enter-selects
++  (let [[l' event] (tlist/update (first (tlist/update (make) :down)) :enter)]
++    (is (= {:type :select
++            :item {:name "tiny-tui"}
++            :index 1} event))
++    (is (= 1 (tlist/selected-index l')))))
++
++(deftest test-quit-and-esc-cancel
++  (is (= {:type :cancel} (second (tlist/update (make) "q"))))
++  (is (= {:type :cancel} (second (tlist/update (make) :esc)))))
++
++(deftest test-unknown-message-ignored
++  (let [l (make)
++        [l' event] (tlist/update l "z")]
++    (is (= l l'))
++    (is (nil? event))))
++
++(deftest test-view
++  (is (= (string/join "\n"
++                      [(str "› " (style/inverse "tiny-cli"))
++                       "  tiny-tui"
++                       "  lgx"])
++         (tlist/view (make))))
++  (is (= (string/join "\n"
++                      ["  tiny-cli"
++                       (str "› " (style/inverse "tiny-tui"))
++                       "  lgx"])
++         (tlist/view (first (tlist/update (make) :down))))))
++
++(deftest test-item->text-defaults-to-str
++  (let [l (tlist/create {:items ["a" "b"]})]
++    (is (= (string/join "\n" [(str "› " (style/inverse "a")) "  b"])
++           (tlist/view l)))))
++
++(deftest test-empty-list
++  (let [l (tlist/create {:items []})]
++    (is (= "No items." (tlist/view l)))
++    (is (nil? (tlist/selected-item l)))
++    (is (nil? (tlist/selected-index l)))
++    (is (nil? (second (tlist/update l :enter))))
++    (is (= l (first (tlist/update l :down)))))
++  (let [l (tlist/create {:items []
++                         :empty-text "Nothing here"})]
++    (is (= "Nothing here" (tlist/view l)))))
+
+exec
+/bin/bash -lc 'git diff -U80 71599287e1187a39ac6aa48920a92be1b2d2b652' in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+diff --git a/examples/counter.lg b/examples/counter.lg
+new file mode 100644
+index 0000000..a34f58d
+--- /dev/null
++++ b/examples/counter.lg
+@@ -0,0 +1,30 @@
++;; Stage 2 demo: a tiny interactive counter.
++;;
++;; Run from the repo root: LG_SOURCE_PATHS=src lg examples/counter.lg
++
++(ns examples.counter
++  (:require [tiny-tui.core :as tui]
++            [tiny-tui.help :as help]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.style :as style]))
++
++(defn -main []
++  (let [result (tui/run
++                {:init {:count 0}
++                 :update (fn [state msg]
++                           (case msg
++                             :up [(update state :count inc) nil]
++                             :down [(update state :count dec) nil]
++                             "q" [state :quit]
++                             [state nil]))
++                 :view (fn [state]
++                         (layout/vstack
++                          (style/bold "Counter")
++                          ""
++                          (str "Count: " (:count state))
++                          ""
++                          (help/view [{:key "↑/↓" :label "change"}
++                                      {:key "q" :label "quit"}])))})]
++    (println "Final count:" (:count (first result)))))
++
++(when-not *compiling-aot* (-main))
+diff --git a/examples/static_screen.lg b/examples/static_screen.lg
+new file mode 100644
+index 0000000..b8e67f5
+--- /dev/null
++++ b/examples/static_screen.lg
+@@ -0,0 +1,24 @@
++;; Stage 1 demo: a static styled screen, no interaction.
++;;
++;; Run from the repo root: LG_SOURCE_PATHS=src lg examples/static_screen.lg
++
++(ns examples.static-screen
++  (:require [term]
++            [tiny-tui.screen :as screen]
++            [tiny-tui.style :as style]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.help :as help]))
++
++(defn -main []
++  (screen/with-screen
++    (screen/render!
++     (layout/vstack
++      (layout/box (style/bold (style/fg :cyan "Projects")))
++      ""
++      "No interaction yet."
++      ""
++      (help/view [{:key "any key" :label "quit"}])))
++    (term/read-key))
++  (println "Bye."))
++
++(when-not *compiling-aot* (-main))
+diff --git a/src/tiny_tui/core.lg b/src/tiny_tui/core.lg
+index f6ef06a..6652984 100644
+--- a/src/tiny_tui/core.lg
++++ b/src/tiny_tui/core.lg
+@@ -1,5 +1,47 @@
+-(ns tiny-tui.core)
++;; tiny-tui.core — the public API.
++;;
++;; run: the minimal program loop. An app is three things:
++;;   :init   initial state (a map)
++;;   :update (fn [state msg] [new-state event]) — nil event keeps looping,
++;;           any non-nil event stops the loop
++;;   :view   (fn [state] string)
++;;
++;; run returns [final-state event]. It handles :ctrl-c itself (returns
++;; event :ctrl-c without consulting :update) and treats :resize as a plain
++;; redraw. Terminal size is injected as :tui/size before every view call.
++;;
++;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
++;; they let whole flows run headlessly with scripted keys.
+ 
+-(defn greet
+-  [name]
+-  (str "Welcome to " name "!"))
++(ns tiny-tui.core
++  (:require [term]
++            [tiny-tui.key :as key]
++            [tiny-tui.screen :as screen]))
++
++(defn- run-loop [opts]
++  (let [update-fn (:update opts)
++        view (:view opts)
++        read-key-fn (or (:read-key-fn opts) key/read)
++        render-fn (or (:render-fn opts) screen/render!)]
++    (loop [state (:init opts)]
++      (let [state (assoc state :tui/size (or (term/size) [80 24]))]
++        (render-fn (view state))
++        (let [msg (read-key-fn)]
++          (cond
++            (nil? msg) [state nil]
++            (= msg :ctrl-c) [state :ctrl-c]
++            (= msg :resize) (recur state)
++            :else (let [result (update-fn state msg)
++                        next-state (first result)
++                        event (second result)]
++                    (if (nil? event)
++                      (recur next-state)
++                      [next-state event]))))))))
++
++(defn run
++  "Run a TUI program (see namespace docstring). Returns [final-state event]."
++  [opts]
++  (if (false? (:screen opts))
++    (run-loop opts)
++    (screen/with-screen
++      (run-loop opts))))
+diff --git a/src/tiny_tui/help.lg b/src/tiny_tui/help.lg
+new file mode 100644
+index 0000000..6c33e12
+--- /dev/null
++++ b/src/tiny_tui/help.lg
+@@ -0,0 +1,13 @@
++;; tiny-tui.help — render a one-line help bar from key bindings.
++
++(ns tiny-tui.help
++  (:require [string]
++            [tiny-tui.style :as style]))
++
++(defn view
++  "bindings: [{:key \"q\" :label \"quit\"} ...] ->
++   \"q quit   enter select\" with keys bold and labels dim."
++  [bindings]
++  (string/join "   "
++               (map (fn [b] (str (style/bold (:key b)) " " (style/dim (:label b))))
++                    bindings)))
+diff --git a/src/tiny_tui/key.lg b/src/tiny_tui/key.lg
+new file mode 100644
+index 0000000..ae76f76
+--- /dev/null
++++ b/src/tiny_tui/key.lg
+@@ -0,0 +1,53 @@
++;; tiny-tui.key — translate raw terminal input into simple messages:
++;; keywords for special keys (:up :down :enter :esc :ctrl-c ...), plain
++;; one-character strings for printable text.
++;;
++;; Only `read` touches the terminal; `parse` is pure and unit-tested.
++;; Control bytes are built with (char code) rather than written literally
++;; in source (mirrors legmacs.keys).
++
++(ns tiny-tui.key
++  (:require [term]))
++
++(def ^:private ESC (str (char 27)))
++
++(def ^:private special
++  (into {}
++        (concat
++          (map (fn [pair] [(str ESC (first pair)) (second pair)])
++               [["[A" :up] ["OA" :up]
++                ["[B" :down] ["OB" :down]
++                ["[C" :right] ["OC" :right]
++                ["[D" :left] ["OD" :left]
++                ["[H" :home] ["OH" :home] ["[1~" :home] ["[7~" :home]
++                ["[F" :end] ["OF" :end] ["[4~" :end] ["[8~" :end]
++                ["[3~" :delete]
++                ["[5~" :pageup]
++                ["[6~" :pagedown]])
++          [[(str (char 13)) :enter]
++           [(str (char 9)) :tab]
++           [(str (char 127)) :backspace]
++           [ESC :esc]
++           [(str (char 0)) :ctrl-space]
++          ;; BEL is term/read-key's synthetic resize wake-up, and also a
++          ;; genuine Ctrl-G — indistinguishable by design. Treating both as
++          ;; :resize is harmless: the loop just redraws.
++           [(str (char 7)) :resize]])))
++
++(defn- ctrl-key [code]
++  (keyword (str "ctrl-" (char (+ code 96)))))
++
++(defn parse
++  "Translate one term/read-key token into a message. Printable text passes
++   through unchanged."
++  [k]
++  (let [code (when (= 1 (count k)) (int (first (seq k))))]
++    (cond
++      (contains? special k) (get special k)
++      (and code (<= 1 code 26)) (ctrl-key code)
++      :else k)))
++
++(defn read
++  "Block for one key. Returns a message, or nil at end of input."
++  []
++  (some-> (term/read-key) parse))
+diff --git a/src/tiny_tui/layout.lg b/src/tiny_tui/layout.lg
+new file mode 100644
+index 0000000..ce8e6e1
+--- /dev/null
++++ b/src/tiny_tui/layout.lg
+@@ -0,0 +1,41 @@
++;; tiny-tui.layout — pure string layout helpers. All measurements use
++;; style/visible-width so styled text lays out correctly.
++
++(ns tiny-tui.layout
++  (:require [string]
++            [tiny-tui.style :as style]))
++
++(defn lines
++  [s]
++  (let [ls (string/split s "\n")]
++    (if (empty? ls) [""] (vec ls))))
++
++(defn vstack
++  "Stack blocks vertically, skipping nils. Blocks may be multi-line."
++  [& blocks]
++  (string/join "\n" (remove nil? blocks)))
++
++(defn hstack
++  "Join strings on one line, with `sep` (default two spaces) between them."
++  ([xs] (hstack "  " xs))
++  ([sep xs] (string/join sep xs)))
++
++(defn pad
++  "Right-pad `s` with spaces to visible width `w`."
++  [s w]
++  (let [n (- w (style/visible-width s))]
++    (if (pos? n)
++      (str s (apply str (repeat n " ")))
++      s)))
++
++(defn box
++  "Draw a box around (possibly multi-line, possibly styled) `content`,
++   sized to the widest visible line with one space of inner padding."
++  [content]
++  (let [ls (lines content)
++        w (apply max (map style/visible-width ls))
++        bar (apply str (repeat (+ 2 w) "─"))]
++    (string/join "\n"
++                 (concat [(str "┌" bar "┐")]
++                         (map #(str "│ " (pad % w) " │") ls)
++                         [(str "└" bar "┘")]))))
+diff --git a/src/tiny_tui/list.lg b/src/tiny_tui/list.lg
+new file mode 100644
+index 0000000..b644486
+--- /dev/null
++++ b/src/tiny_tui/list.lg
+@@ -0,0 +1,57 @@
++;; tiny-tui.list — a pure list widget. No pagination, no scrolling (V1
++;; non-goals): state in, [state event] out, string view.
++
++(ns tiny-tui.list
++  (:require [string]
++            [tiny-tui.style :as style]))
++
++(defn create
++  "opts: {:items [...] :item->text fn :empty-text \"...\"}"
++  [opts]
++  {:items (vec (:items opts))
++   :item->text (or (:item->text opts) str)
++   :empty-text (or (:empty-text opts) "No items.")
++   :cursor 0})
++
++(defn selected-index [l]
++  (when (seq (:items l))
++    (:cursor l)))
++
++(defn selected-item [l]
++  (when (seq (:items l))
++    (nth (:items l) (:cursor l))))
++
++(defn- move [l delta]
++  (let [n (count (:items l))]
++    (if (zero? n)
++      l
++      (assoc l :cursor (min (dec n) (max 0 (+ (:cursor l) delta)))))))
++
++(defn- select-event [l]
++  (when-let [item (selected-item l)]
++    {:type :select
++     :item item
++     :index (:cursor l)}))
++
++(defn update
++  "Returns [new-state event]. Events: {:type :select ...} on enter,
++   {:type :cancel} on q/esc, nil otherwise."
++  [l msg]
++  (cond
++    (= msg :up) [(move l -1) nil]
++    (= msg :down) [(move l 1) nil]
++    (= msg :enter) [l (select-event l)]
++    (or (= msg "q") (= msg :esc)) [l {:type :cancel}]
++    :else [l nil]))
++
++(defn view [l]
++  (if (empty? (:items l))
++    (:empty-text l)
++    (string/join "\n"
++                 (map-indexed
++                   (fn [i item]
++                     (let [text ((:item->text l) item)]
++                       (if (= i (:cursor l))
++                         (str "› " (style/inverse text))
++                         (str "  " text))))
++                   (:items l)))))
+diff --git a/src/tiny_tui/screen.lg b/src/tiny_tui/screen.lg
+index 8fb67e4..30e5fde 100644
+--- a/src/tiny_tui/screen.lg
++++ b/src/tiny_tui/screen.lg
+@@ -1,80 +1,80 @@
+ ;; tiny-tui.screen — terminal ownership: entering/leaving raw interactive
+ ;; mode safely, and writing full frames.
+ ;;
+ ;; This is one of the two namespaces allowed to touch the terminal (the
+ ;; other is tiny-tui.key). Everything else in tiny-tui is pure.
+ ;;
+ ;; Escape codes are built with (char 27) rather than written as literal
+ ;; control characters, so the source stays readable and editing tools can't
+ ;; corrupt it.
+ 
+ (ns tiny-tui.screen
+   (:require [string]
+             [term]))
+ 
+ (def ^:private ESC (str (char 27)))
+ (def ^:private home (str ESC "[H"))
+ (def ^:private clear-eol (str ESC "[K"))
+ (def ^:private clear-below (str ESC "[J"))
+ 
+ (defn frame-str
+   "Build the ANSI string for one full-frame render of view string `s`:
+    cursor home, each line followed by clear-to-end-of-line, lines joined
+    with \\r\\n (raw mode needs the \\r), then clear everything below.
+    Clearing per line instead of wiping the whole screen avoids flicker."
+   [s]
+   (let [lines (string/split s "\n")
+         lines (if (empty? lines) [""] lines)]
+     (str home
+          (string/join (str clear-eol "\r\n") lines)
+          clear-eol
+          clear-below)))
+ 
+ (defn shutdown!
+   "Give the terminal back: restore style, cursor, main screen and cooked
+    mode. Safe to call even if init! only partially succeeded."
+   []
+   (term/reset-style)
+   (term/show-cursor)
+   (term/main-screen)
+   (term/flush)
+   (term/restore-mode!))
+ 
+ (defn init!
+   "Take over the terminal: raw mode, alternate screen, hidden cursor.
+    Throws when stdin/stdout is not a terminal (term/size returns nil).
+    If setup fails after raw mode was enabled, the terminal is restored
+    before the error propagates."
+   []
+   (when (nil? (term/size))
+     (throw (ex-info "tiny-tui requires a terminal (stdin/stdout is not a tty)" {})))
+   (term/raw-mode!)
+   (try
+     (term/alternate-screen)
+     (term/hide-cursor)
+     (term/clear)
+     (term/flush)
+     (catch e
+-      (shutdown!)
++           (shutdown!)
+       (throw e))))
+ 
+ (defn render!
+   "Write one full frame built from view string `s`."
+   [s]
+   (term/write (frame-str s))
+   (term/flush))
+ 
+ (defn clear!
+   []
+   (term/clear)
+   (term/flush))
+ 
+ (defmacro with-screen
+   "Run `body` with the terminal in TUI mode, guaranteeing cleanup even when
+    an exception escapes."
+   [& body]
+   (list 'do
+         (list 'tiny-tui.screen/init!)
+         (list 'try
+               (cons 'do body)
+               (list 'finally (list 'tiny-tui.screen/shutdown!)))))
+diff --git a/src/tiny_tui/style.lg b/src/tiny_tui/style.lg
+new file mode 100644
+index 0000000..2c289a4
+--- /dev/null
++++ b/src/tiny_tui/style.lg
+@@ -0,0 +1,83 @@
++;; tiny-tui.style — pure ANSI text styling. Every function takes text and
++;; returns text wrapped in SGR escape sequences; nothing here touches the
++;; terminal (term/set-fg etc. write directly to stdout, which is the wrong
++;; shape for string-based views).
++;;
++;; Named colors use the portable 16-color codes; an integer color is passed
++;; through as 256-color. Escape bytes are built with (char 27), never
++;; written literally in source.
++
++(ns tiny-tui.style
++  (:require [string]))
++
++(def ^:private ESC (str (char 27)))
++(def ^:private esc-char (char 27))
++(def ^:private reset (str ESC "[0m"))
++
++(def ^:private color-codes
++  {:black 30
++   :red 31
++   :green 32
++   :yellow 33
++   :blue 34
++   :magenta 35
++   :cyan 36
++   :white 37
++   :bright-black 90
++   :bright-red 91
++   :bright-green 92
++   :bright-yellow 93
++   :bright-blue 94
++   :bright-magenta 95
++   :bright-cyan 96
++   :bright-white 97})
++
++(defn- fg-code [c]
++  (if (keyword? c)
++    (str (get color-codes c))
++    (str "38;5;" c)))
++
++(defn- bg-code [c]
++  (if (keyword? c)
++    (str (+ 10 (get color-codes c)))
++    (str "48;5;" c)))
++
++(defn- sgr [codes s]
++  (if (empty? codes)
++    s
++    (str ESC "[" (string/join ";" codes) "m" s reset)))
++
++(defn bold [s] (sgr ["1"] s))
++(defn dim [s] (sgr ["2"] s))
++(defn inverse [s] (sgr ["7"] s))
++(defn fg [c s] (sgr [(fg-code c)] s))
++(defn bg [c s] (sgr [(bg-code c)] s))
++
++(defn styled
++  "Apply several attributes at once as a single SGR sequence.
++   attrs: {:bold? :dim? :inverse? :fg :bg}"
++  [attrs s]
++  (sgr (remove nil?
++               [(when (:bold? attrs) "1")
++                (when (:dim? attrs) "2")
++                (when (:inverse? attrs) "7")
++                (when-let [c (:fg attrs)] (fg-code c))
++                (when-let [c (:bg attrs)] (bg-code c))])
++       s))
++
++(defn strip
++  "Remove all ESC[...m sequences, leaving the visible text."
++  [s]
++  (loop [cs (seq s) out []]
++    (if (empty? cs)
++      (apply str out)
++      (let [c (first cs)]
++        (if (= c esc-char)
++          (recur (rest (drop-while #(not= % \m) cs)) out)
++          (recur (rest cs) (conj out c)))))))
++
++(defn visible-width
++  "Display width of `s` ignoring escape sequences. Counts characters —
++   wide-rune handling is out of scope for V1."
++  [s]
++  (count (strip s)))
+diff --git a/test/tiny_tui/core_test.lg b/test/tiny_tui/core_test.lg
+index 37dc0ac..15648d3 100644
+--- a/test/tiny_tui/core_test.lg
++++ b/test/tiny_tui/core_test.lg
+@@ -1,6 +1,85 @@
+-(ns tiny-tui.greeter-test
++(ns tiny-tui.core-test
+   (:require [clojure.test :refer :all]
+-            [tiny-tui.core :as c]))
++            [tiny-tui.core :as tui]
++            [tiny-tui.help :as help]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.list :as tlist]
++            [tiny-tui.style :as style]))
+ 
+-(deftest test-greet-ok
+-  (is (= "Welcome to let-go!" (c/greet "let-go"))))
++(defn scripted
++  "Read-fn that returns the scripted messages one by one, then nil (EOF)."
++  [msgs]
++  (let [q (atom (seq msgs))]
++    (fn []
++      (let [m (first @q)]
++        (swap! q rest)
++        m))))
++
++(defn counter-app [frames]
++  {:init {:count 0}
++   :update (fn [state msg]
++             (case msg
++               :up [(update state :count inc) nil]
++               :down [(update state :count dec) nil]
++               "q" [state :quit]
++               [state nil]))
++   :view (fn [state] (str "Count: " (:count state)))
++   :render-fn (fn [s] (swap! frames conj s))
++   :screen false})
++
++(deftest test-run-counter
++  (let [frames (atom [])
++        [state event] (tui/run (assoc (counter-app frames)
++                                      :read-key-fn (scripted [:up :up :down "q"])))]
++    (is (= 1 (:count state)))
++    (is (= :quit event))
++    ;; one frame per loop iteration: initial + after each of the 3 moves
++    (is (= 4 (count @frames)))
++    (is (= "Count: 1" (last @frames)))))
++
++(deftest test-run-ctrl-c-quits-without-update
++  (let [seen (atom [])
++        app {:init {}
++             :update (fn [state msg] (swap! seen conj msg) [state nil])
++             :view (fn [_] "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted [:ctrl-c])}
++        [_ event] (tui/run app)]
++    (is (= :ctrl-c event))
++    (is (= [] @seen))))
++
++(deftest test-run-resize-rerenders-without-update
++  (let [seen (atom [])
++        frames (atom [])
++        app {:init {}
++             :update (fn [state msg] (swap! seen conj msg) [state :quit])
++             :view (fn [_] "x")
++             :render-fn (fn [s] (swap! frames conj s))
++             :screen false
++             :read-key-fn (scripted [:resize "q"])}]
++    (tui/run app)
++    (is (= ["q"] @seen))
++    (is (= 2 (count @frames)))))
++
++(deftest test-run-injects-tui-size
++  (let [sizes (atom [])
++        app {:init {}
++             :update (fn [state _] [state :quit])
++             :view (fn [state] (swap! sizes conj (:tui/size state)) "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted ["q"])}]
++    (tui/run app)
++    (is (= [[80 24]] @sizes))))
++
++(deftest test-run-eof-terminates
++  (let [app {:init {:a 1}
++             :update (fn [state _] [state nil])
++             :view (fn [_] "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted [])}
++        [state event] (tui/run app)]
++    (is (= 1 (:a state)))
++    (is (nil? event))))
+diff --git a/test/tiny_tui/help_test.lg b/test/tiny_tui/help_test.lg
+new file mode 100644
+index 0000000..eed3a46
+--- /dev/null
++++ b/test/tiny_tui/help_test.lg
+@@ -0,0 +1,20 @@
++(ns tiny-tui.help-test
++  (:require [clojure.test :refer :all]
++            [tiny-tui.help :as help]
++            [tiny-tui.style :as style]))
++
++(deftest test-view
++  (is (= (str (style/bold "q") " " (style/dim "quit"))
++         (help/view [{:key "q"
++                      :label "quit"}])))
++  (is (= (str (style/bold "↑/↓") " " (style/dim "navigate")
++              "   "
++              (style/bold "enter") " " (style/dim "select")
++              "   "
++              (style/bold "q") " " (style/dim "quit"))
++         (help/view [{:key "↑/↓"
++                      :label "navigate"}
++                     {:key "enter"
++                      :label "select"}
++                     {:key "q"
++                      :label "quit"}]))))
+diff --git a/test/tiny_tui/key_test.lg b/test/tiny_tui/key_test.lg
+new file mode 100644
+index 0000000..d6068f6
+--- /dev/null
++++ b/test/tiny_tui/key_test.lg
+@@ -0,0 +1,38 @@
++(ns tiny-tui.key-test
++  (:require [clojure.test :refer :all]
++            [tiny-tui.key :as key]))
++
++(def ESC (str (char 27)))
++
++(deftest test-parse-arrows
++  (is (= :up (key/parse (str ESC "[A"))))
++  (is (= :up (key/parse (str ESC "OA"))))
++  (is (= :down (key/parse (str ESC "[B"))))
++  (is (= :down (key/parse (str ESC "OB"))))
++  (is (= :right (key/parse (str ESC "[C"))))
++  (is (= :left (key/parse (str ESC "[D")))))
++
++(deftest test-parse-nav-keys
++  (is (= :home (key/parse (str ESC "[H"))))
++  (is (= :home (key/parse (str ESC "[1~"))))
++  (is (= :end (key/parse (str ESC "[F"))))
++  (is (= :end (key/parse (str ESC "[4~"))))
++  (is (= :delete (key/parse (str ESC "[3~")))))
++
++(deftest test-parse-named-keys
++  (is (= :enter (key/parse (str (char 13)))))
++  (is (= :tab (key/parse (str (char 9)))))
++  (is (= :backspace (key/parse (str (char 127)))))
++  (is (= :esc (key/parse ESC))))
++
++(deftest test-parse-control-keys
++  (is (= :ctrl-c (key/parse (str (char 3)))))
++  (is (= :ctrl-a (key/parse (str (char 1)))))
++  (is (= :ctrl-space (key/parse (str (char 0)))))
++  ;; BEL doubles as term/read-key's resize wake-up
++  (is (= :resize (key/parse (str (char 7))))))
++
++(deftest test-parse-printables-pass-through
++  (is (= "q" (key/parse "q")))
++  (is (= "d" (key/parse "d")))
++  (is (= " " (key/parse " "))))
+diff --git a/test/tiny_tui/layout_test.lg b/test/tiny_tui/layout_test.lg
+new file mode 100644
+index 0000000..548cee1
+--- /dev/null
++++ b/test/tiny_tui/layout_test.lg
+@@ -0,0 +1,48 @@
++(ns tiny-tui.layout-test
++  (:require [clojure.test :refer :all]
++            [string]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.style :as style]))
++
++(deftest test-lines
++  (is (= ["one" "two"] (layout/lines "one\ntwo")))
++  (is (= [""] (layout/lines ""))))
++
++(deftest test-vstack
++  (is (= "a\nb\nc" (layout/vstack "a" "b" "c")))
++  (is (= "a\nc" (layout/vstack "a" nil "c")))
++  (is (= "title\nbody line 1\nbody line 2"
++         (layout/vstack "title" "body line 1\nbody line 2"))))
++
++(deftest test-hstack
++  (is (= "a  b  c" (layout/hstack ["a" "b" "c"])))
++  (is (= "a   b" (layout/hstack "   " ["a" "b"]))))
++
++(deftest test-pad
++  (is (= "ab   " (layout/pad "ab" 5)))
++  (is (= "ab" (layout/pad "ab" 2)))
++  ;; padding measures visible width, not raw length
++  (is (= (str (style/bold "ab") "   ")
++         (layout/pad (style/bold "ab") 5))))
++
++(deftest test-box-single-line
++  (is (= (string/join "\n"
++                      ["┌──────────┐"
++                       "│ Projects │"
++                       "└──────────┘"])
++         (layout/box "Projects"))))
++
++(deftest test-box-multi-line
++  (is (= (string/join "\n"
++                      ["┌──────────┐"
++                       "│ Projects │"
++                       "│ hi       │"
++                       "└──────────┘"])
++         (layout/box "Projects\nhi"))))
++
++(deftest test-box-styled-content
++  (is (= (string/join "\n"
++                      ["┌────┐"
++                       (str "│ " (style/bold "ab") " │")
++                       "└────┘"])
++         (layout/box (style/bold "ab")))))
+diff --git a/test/tiny_tui/list_test.lg b/test/tiny_tui/list_test.lg
+new file mode 100644
+index 0000000..5b82648
+--- /dev/null
++++ b/test/tiny_tui/list_test.lg
+@@ -0,0 +1,75 @@
++(ns tiny-tui.list-test
++  (:require [clojure.test :refer :all]
++            [string]
++            [tiny-tui.list :as tlist]
++            [tiny-tui.style :as style]))
++
++(def projects
++  [{:name "tiny-cli"} {:name "tiny-tui"} {:name "lgx"}])
++
++(defn make []
++  (tlist/create {:items projects
++                 :item->text :name}))
++
++(deftest test-create
++  (let [l (make)]
++    (is (= 0 (tlist/selected-index l)))
++    (is (= {:name "tiny-cli"} (tlist/selected-item l)))))
++
++(deftest test-cursor-moves-and-clamps
++  (let [l (make)
++        down (fn [l] (first (tlist/update l :down)))
++        up (fn [l] (first (tlist/update l :up)))]
++    (is (= 1 (tlist/selected-index (down l))))
++    (is (= {:name "tiny-tui"} (tlist/selected-item (down l))))
++    ;; clamped at the bottom
++    (is (= 2 (tlist/selected-index (down (down (down (down l)))))))
++    ;; clamped at the top
++    (is (= 0 (tlist/selected-index (up l))))
++    ;; moving returns no event
++    (is (= nil (second (tlist/update l :down))))))
++
++(deftest test-enter-selects
++  (let [[l' event] (tlist/update (first (tlist/update (make) :down)) :enter)]
++    (is (= {:type :select
++            :item {:name "tiny-tui"}
++            :index 1} event))
++    (is (= 1 (tlist/selected-index l')))))
++
++(deftest test-quit-and-esc-cancel
++  (is (= {:type :cancel} (second (tlist/update (make) "q"))))
++  (is (= {:type :cancel} (second (tlist/update (make) :esc)))))
++
++(deftest test-unknown-message-ignored
++  (let [l (make)
++        [l' event] (tlist/update l "z")]
++    (is (= l l'))
++    (is (nil? event))))
++
++(deftest test-view
++  (is (= (string/join "\n"
++                      [(str "› " (style/inverse "tiny-cli"))
++                       "  tiny-tui"
++                       "  lgx"])
++         (tlist/view (make))))
++  (is (= (string/join "\n"
++                      ["  tiny-cli"
++                       (str "› " (style/inverse "tiny-tui"))
++                       "  lgx"])
++         (tlist/view (first (tlist/update (make) :down))))))
++
++(deftest test-item->text-defaults-to-str
++  (let [l (tlist/create {:items ["a" "b"]})]
++    (is (= (string/join "\n" [(str "› " (style/inverse "a")) "  b"])
++           (tlist/view l)))))
++
++(deftest test-empty-list
++  (let [l (tlist/create {:items []})]
++    (is (= "No items." (tlist/view l)))
++    (is (nil? (tlist/selected-item l)))
++    (is (nil? (tlist/selected-index l)))
++    (is (nil? (second (tlist/update l :enter))))
++    (is (= l (first (tlist/update l :down)))))
++  (let [l (tlist/create {:items []
++                         :empty-text "Nothing here"})]
++    (is (= "Nothing here" (tlist/view l)))))
+diff --git a/test/tiny_tui/style_test.lg b/test/tiny_tui/style_test.lg
+new file mode 100644
+index 0000000..6e61961
+--- /dev/null
++++ b/test/tiny_tui/style_test.lg
+@@ -0,0 +1,38 @@
++(ns tiny-tui.style-test
++  (:require [clojure.test :refer :all]
++            [tiny-tui.style :as style]))
++
++(def ESC (str (char 27)))
++(defn sgr [codes s] (str ESC "[" codes "m" s ESC "[0m"))
++
++(deftest test-attrs
++  (is (= (sgr "1" "x") (style/bold "x")))
++  (is (= (sgr "2" "x") (style/dim "x")))
++  (is (= (sgr "7" "x") (style/inverse "x"))))
++
++(deftest test-fg-colors
++  (is (= (sgr "36" "x") (style/fg :cyan "x")))
++  (is (= (sgr "91" "x") (style/fg :bright-red "x")))
++  (is (= (sgr "38;5;208" "x") (style/fg 208 "x"))))
++
++(deftest test-bg-colors
++  (is (= (sgr "46" "x") (style/bg :cyan "x")))
++  (is (= (sgr "101" "x") (style/bg :bright-red "x")))
++  (is (= (sgr "48;5;208" "x") (style/bg 208 "x"))))
++
++(deftest test-nesting
++  (is (= (sgr "1" (sgr "36" "x"))
++         (style/bold (style/fg :cyan "x")))))
++
++(deftest test-styled-combines-codes
++  (is (= (sgr "1;36" "x") (style/styled {:bold? true
++                                         :fg :cyan} "x")))
++  (is (= (sgr "7" "x") (style/styled {:inverse? true} "x")))
++  (is (= "x" (style/styled {} "x"))))
++
++(deftest test-strip-and-visible-width
++  (is (= "x" (style/strip (style/bold "x"))))
++  (is (= "Projects" (style/strip (style/bold (style/fg :cyan "Projects")))))
++  (is (= "plain" (style/strip "plain")))
++  (is (= 8 (style/visible-width (style/fg :cyan "Projects"))))
++  (is (= 0 (style/visible-width ""))))
+
+exec
+/bin/bash -lc 'lgx test 2>&1 || true' in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+[38;5;35m=> Running tests in test/...[0m
+test/tiny_tui/core_test.lg
+  [38;5;35m✓[0m test-run-counter
+  [38;5;35m✓[0m test-run-ctrl-c-quits-without-update
+  [38;5;35m✓[0m test-run-resize-rerenders-without-update
+  [38;5;35m✓[0m test-run-injects-tui-size
+
+test/tiny_tui/help_test.lg
+  [38;5;35m✓[0m test-view
+
+test/tiny_tui/key_test.lg
+  [38;5;35m✓[0m test-parse-arrows
+  [38;5;35m✓[0m test-parse-nav-keys
+  [38;5;35m✓[0m test-parse-named-keys
+  [38;5;35m✓[0m test-parse-control-keys
+  [38;5;35m✓[0m test-parse-printables-pass-through
+
+test/tiny_tui/layout_test.lg
+  [38;5;35m✓[0m test-lines
+  [38;5;35m✓[0m test-vstack
+  [38;5;35m✓[0m test-hstack
+  [38;5;35m✓[0m test-pad
+  [38;5;35m✓[0m test-box-single-line
+  [38;5;35m✓[0m test-box-multi-line
+  [38;5;35m✓[0m test-box-styled-content
+
+test/tiny_tui/list_test.lg
+  [38;5;35m✓[0m test-create
+  [38;5;35m✓[0m test-cursor-moves-and-clamps
+  [38;5;35m✓[0m test-enter-selects
+  [38;5;35m✓[0m test-quit-and-esc-cancel
+  [38;5;35m✓[0m test-unknown-message-ignored
+  [38;5;35m✓[0m test-view
+  [38;5;35m✓[0m test-item->text-defaults-to-str
+  [38;5;35m✓[0m test-empty-list
+
+test/tiny_tui/screen_test.lg
+  [38;5;35m✓[0m test-frame-str-single-line
+  [38;5;35m✓[0m test-frame-str-multi-line
+  [38;5;35m✓[0m test-frame-str-empty-string
+
+test/tiny_tui/style_test.lg
+  [38;5;35m✓[0m test-attrs
+  [38;5;35m✓[0m test-fg-colors
+  [38;5;35m✓[0m test-bg-colors
+  [38;5;35m✓[0m test-nesting
+  [38;5;35m✓[0m test-styled-combines-codes
+  [38;5;35m✓[0m test-strip-and-visible-width
+
+[38;5;35m34 tests, 89 assertions, 0 failures[0m
+OK
+error: failed to load /Users/andrew/Projects/tiny-tui/test/tiny_tui/core_test.lg: CompileError: compiling do member
+	caused by CompileError: compiling def value
+	caused by CompileError: compiling fn body
+	caused by CompileError: compiling let binding
+	caused by CompileError: compiling do member
+	caused by CompileError: compiling if condition
+	caused by CompileError: compiling arguments (tui/select (select-opts [:down :enter] (atom [])))
+	caused by CompileError: compiling function position
+	caused by CompileError: Can't resolve tui/select in this context
+lgx: a test file failed to load (see errors above)
+
+exec
+/bin/bash -lc "nl -ba test/tiny_tui/core_test.lg | sed -n '1,220p'; git diff -U20 71599287e1187a39ac6aa48920a92be1b2d2b652 -- test/tiny_tui/core_test.lg src/tiny_tui/core.lg main.lg examples/select_project.lg" in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+     1	(ns tiny-tui.core-test
+     2	  (:require [clojure.test :refer :all]
+     3	            [tiny-tui.core :as tui]
+     4	            [tiny-tui.help :as help]
+     5	            [tiny-tui.layout :as layout]
+     6	            [tiny-tui.list :as tlist]
+     7	            [tiny-tui.style :as style]))
+     8	
+     9	(defn scripted
+    10	  "Read-fn that returns the scripted messages one by one, then nil (EOF)."
+    11	  [msgs]
+    12	  (let [q (atom (seq msgs))]
+    13	    (fn []
+    14	      (let [m (first @q)]
+    15	        (swap! q rest)
+    16	        m))))
+    17	
+    18	(defn counter-app [frames]
+    19	  {:init {:count 0}
+    20	   :update (fn [state msg]
+    21	             (case msg
+    22	               :up [(update state :count inc) nil]
+    23	               :down [(update state :count dec) nil]
+    24	               "q" [state :quit]
+    25	               [state nil]))
+    26	   :view (fn [state] (str "Count: " (:count state)))
+    27	   :render-fn (fn [s] (swap! frames conj s))
+    28	   :screen false})
+    29	
+    30	(deftest test-run-counter
+    31	  (let [frames (atom [])
+    32	        [state event] (tui/run (assoc (counter-app frames)
+    33	                                      :read-key-fn (scripted [:up :up :down "q"])))]
+    34	    (is (= 1 (:count state)))
+    35	    (is (= :quit event))
+    36	    ;; one frame per loop iteration: initial + after each of the 3 moves
+    37	    (is (= 4 (count @frames)))
+    38	    (is (= "Count: 1" (last @frames)))))
+    39	
+    40	(deftest test-run-ctrl-c-quits-without-update
+    41	  (let [seen (atom [])
+    42	        app {:init {}
+    43	             :update (fn [state msg] (swap! seen conj msg) [state nil])
+    44	             :view (fn [_] "x")
+    45	             :render-fn (fn [_] nil)
+    46	             :screen false
+    47	             :read-key-fn (scripted [:ctrl-c])}
+    48	        [_ event] (tui/run app)]
+    49	    (is (= :ctrl-c event))
+    50	    (is (= [] @seen))))
+    51	
+    52	(deftest test-run-resize-rerenders-without-update
+    53	  (let [seen (atom [])
+    54	        frames (atom [])
+    55	        app {:init {}
+    56	             :update (fn [state msg] (swap! seen conj msg) [state :quit])
+    57	             :view (fn [_] "x")
+    58	             :render-fn (fn [s] (swap! frames conj s))
+    59	             :screen false
+    60	             :read-key-fn (scripted [:resize "q"])}]
+    61	    (tui/run app)
+    62	    (is (= ["q"] @seen))
+    63	    (is (= 2 (count @frames)))))
+    64	
+    65	(deftest test-run-injects-tui-size
+    66	  (let [sizes (atom [])
+    67	        app {:init {}
+    68	             :update (fn [state _] [state :quit])
+    69	             :view (fn [state] (swap! sizes conj (:tui/size state)) "x")
+    70	             :render-fn (fn [_] nil)
+    71	             :screen false
+    72	             :read-key-fn (scripted ["q"])}]
+    73	    (tui/run app)
+    74	    (is (= [[80 24]] @sizes))))
+    75	
+    76	(def projects
+    77	  [{:name "tiny-cli"} {:name "tiny-tui"} {:name "lgx"}])
+    78	
+    79	(defn select-opts [script frames]
+    80	  {:title "Choose project"
+    81	   :items projects
+    82	   :item->text :name
+    83	   :read-key-fn (scripted script)
+    84	   :render-fn (fn [s] (swap! frames conj s))
+    85	   :screen false})
+    86	
+    87	(deftest test-select-picks-item
+    88	  (is (= {:type :select :item {:name "tiny-tui"} :index 1}
+    89	         (tui/select (select-opts [:down :enter] (atom []))))))
+    90	
+    91	(deftest test-select-cancel
+    92	  (is (= {:type :cancel} (tui/select (select-opts ["q"] (atom [])))))
+    93	  (is (= {:type :cancel} (tui/select (select-opts [:esc] (atom [])))))
+    94	  (is (= {:type :cancel} (tui/select (select-opts [:ctrl-c] (atom [])))))
+    95	  ;; EOF also cancels
+    96	  (is (= {:type :cancel} (tui/select (select-opts [] (atom []))))))
+    97	
+    98	(deftest test-select-frame
+    99	  (let [frames (atom [])]
+   100	    (tui/select (select-opts ["q"] frames))
+   101	    (is (= (layout/vstack
+   102	            (style/bold "Choose project")
+   103	            ""
+   104	            (tlist/view (tlist/create {:items projects :item->text :name}))
+   105	            ""
+   106	            (help/view [{:key "↑/↓" :label "navigate"}
+   107	                        {:key "enter" :label "select"}
+   108	                        {:key "q" :label "quit"}]))
+   109	           (first @frames)))))
+   110	
+   111	(deftest test-select-without-title
+   112	  (let [frames (atom [])]
+   113	    (tui/select (assoc (select-opts ["q"] frames) :title nil))
+   114	    (is (= (layout/vstack
+   115	            (tlist/view (tlist/create {:items projects :item->text :name}))
+   116	            ""
+   117	            (help/view [{:key "↑/↓" :label "navigate"}
+   118	                        {:key "enter" :label "select"}
+   119	                        {:key "q" :label "quit"}]))
+   120	           (first @frames)))))
+   121	
+   122	(deftest test-run-eof-terminates
+   123	  (let [app {:init {:a 1}
+   124	             :update (fn [state _] [state nil])
+   125	             :view (fn [_] "x")
+   126	             :render-fn (fn [_] nil)
+   127	             :screen false
+   128	             :read-key-fn (scripted [])}
+   129	        [state event] (tui/run app)]
+   130	    (is (= 1 (:a state)))
+   131	    (is (nil? event))))
+diff --git a/src/tiny_tui/core.lg b/src/tiny_tui/core.lg
+index f6ef06a..44bf998 100644
+--- a/src/tiny_tui/core.lg
++++ b/src/tiny_tui/core.lg
+@@ -1,5 +1,51 @@
+-(ns tiny-tui.core)
++;; tiny-tui.core — the public API.
++;;
++;; run: the minimal program loop. An app is three things:
++;;   :init   initial state (a map)
++;;   :update (fn [state msg] [new-state event]) — nil event keeps looping,
++;;           any non-nil event stops the loop
++;;   :view   (fn [state] string)
++;;
++;; run returns [final-state event]. It handles :ctrl-c itself (returns
++;; event :ctrl-c without consulting :update) and treats :resize as a plain
++;; redraw. Terminal size is injected as :tui/size before every view call.
++;;
++;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
++;; they let whole flows run headlessly with scripted keys.
+ 
+-(defn greet
+-  [name]
+-  (str "Welcome to " name "!"))
++(ns tiny-tui.core
++  (:require [term]
++            [tiny-tui.help :as help]
++            [tiny-tui.key :as key]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.list :as tlist]
++            [tiny-tui.screen :as screen]
++            [tiny-tui.style :as style]))
++
++(defn- run-loop [opts]
++  (let [update-fn (:update opts)
++        view (:view opts)
++        read-key-fn (or (:read-key-fn opts) key/read)
++        render-fn (or (:render-fn opts) screen/render!)]
++    (loop [state (:init opts)]
++      (let [state (assoc state :tui/size (or (term/size) [80 24]))]
++        (render-fn (view state))
++        (let [msg (read-key-fn)]
++          (cond
++            (nil? msg) [state nil]
++            (= msg :ctrl-c) [state :ctrl-c]
++            (= msg :resize) (recur state)
++            :else (let [result (update-fn state msg)
++                        next-state (first result)
++                        event (second result)]
++                    (if (nil? event)
++                      (recur next-state)
++                      [next-state event]))))))))
++
++(defn run
++  "Run a TUI program (see namespace docstring). Returns [final-state event]."
++  [opts]
++  (if (false? (:screen opts))
++    (run-loop opts)
++    (screen/with-screen
++      (run-loop opts))))
+diff --git a/test/tiny_tui/core_test.lg b/test/tiny_tui/core_test.lg
+index 37dc0ac..1f410ff 100644
+--- a/test/tiny_tui/core_test.lg
++++ b/test/tiny_tui/core_test.lg
+@@ -1,6 +1,131 @@
+-(ns tiny-tui.greeter-test
++(ns tiny-tui.core-test
+   (:require [clojure.test :refer :all]
+-            [tiny-tui.core :as c]))
++            [tiny-tui.core :as tui]
++            [tiny-tui.help :as help]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.list :as tlist]
++            [tiny-tui.style :as style]))
+ 
+-(deftest test-greet-ok
+-  (is (= "Welcome to let-go!" (c/greet "let-go"))))
++(defn scripted
++  "Read-fn that returns the scripted messages one by one, then nil (EOF)."
++  [msgs]
++  (let [q (atom (seq msgs))]
++    (fn []
++      (let [m (first @q)]
++        (swap! q rest)
++        m))))
++
++(defn counter-app [frames]
++  {:init {:count 0}
++   :update (fn [state msg]
++             (case msg
++               :up [(update state :count inc) nil]
++               :down [(update state :count dec) nil]
++               "q" [state :quit]
++               [state nil]))
++   :view (fn [state] (str "Count: " (:count state)))
++   :render-fn (fn [s] (swap! frames conj s))
++   :screen false})
++
++(deftest test-run-counter
++  (let [frames (atom [])
++        [state event] (tui/run (assoc (counter-app frames)
++                                      :read-key-fn (scripted [:up :up :down "q"])))]
++    (is (= 1 (:count state)))
++    (is (= :quit event))
++    ;; one frame per loop iteration: initial + after each of the 3 moves
++    (is (= 4 (count @frames)))
++    (is (= "Count: 1" (last @frames)))))
++
++(deftest test-run-ctrl-c-quits-without-update
++  (let [seen (atom [])
++        app {:init {}
++             :update (fn [state msg] (swap! seen conj msg) [state nil])
++             :view (fn [_] "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted [:ctrl-c])}
++        [_ event] (tui/run app)]
++    (is (= :ctrl-c event))
++    (is (= [] @seen))))
++
++(deftest test-run-resize-rerenders-without-update
++  (let [seen (atom [])
++        frames (atom [])
++        app {:init {}
++             :update (fn [state msg] (swap! seen conj msg) [state :quit])
++             :view (fn [_] "x")
++             :render-fn (fn [s] (swap! frames conj s))
++             :screen false
++             :read-key-fn (scripted [:resize "q"])}]
++    (tui/run app)
++    (is (= ["q"] @seen))
++    (is (= 2 (count @frames)))))
++
++(deftest test-run-injects-tui-size
++  (let [sizes (atom [])
++        app {:init {}
++             :update (fn [state _] [state :quit])
++             :view (fn [state] (swap! sizes conj (:tui/size state)) "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted ["q"])}]
++    (tui/run app)
++    (is (= [[80 24]] @sizes))))
++
++(def projects
++  [{:name "tiny-cli"} {:name "tiny-tui"} {:name "lgx"}])
++
++(defn select-opts [script frames]
++  {:title "Choose project"
++   :items projects
++   :item->text :name
++   :read-key-fn (scripted script)
++   :render-fn (fn [s] (swap! frames conj s))
++   :screen false})
++
++(deftest test-select-picks-item
++  (is (= {:type :select :item {:name "tiny-tui"} :index 1}
++         (tui/select (select-opts [:down :enter] (atom []))))))
++
++(deftest test-select-cancel
++  (is (= {:type :cancel} (tui/select (select-opts ["q"] (atom [])))))
++  (is (= {:type :cancel} (tui/select (select-opts [:esc] (atom [])))))
++  (is (= {:type :cancel} (tui/select (select-opts [:ctrl-c] (atom [])))))
++  ;; EOF also cancels
++  (is (= {:type :cancel} (tui/select (select-opts [] (atom []))))))
++
++(deftest test-select-frame
++  (let [frames (atom [])]
++    (tui/select (select-opts ["q"] frames))
++    (is (= (layout/vstack
++            (style/bold "Choose project")
++            ""
++            (tlist/view (tlist/create {:items projects :item->text :name}))
++            ""
++            (help/view [{:key "↑/↓" :label "navigate"}
++                        {:key "enter" :label "select"}
++                        {:key "q" :label "quit"}]))
++           (first @frames)))))
++
++(deftest test-select-without-title
++  (let [frames (atom [])]
++    (tui/select (assoc (select-opts ["q"] frames) :title nil))
++    (is (= (layout/vstack
++            (tlist/view (tlist/create {:items projects :item->text :name}))
++            ""
++            (help/view [{:key "↑/↓" :label "navigate"}
++                        {:key "enter" :label "select"}
++                        {:key "q" :label "quit"}]))
++           (first @frames)))))
++
++(deftest test-run-eof-terminates
++  (let [app {:init {:a 1}
++             :update (fn [state _] [state nil])
++             :view (fn [_] "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted [])}
++        [state event] (tui/run app)]
++    (is (= 1 (:a state)))
++    (is (nil? event))))
+
+exec
+/bin/bash -lc "nl -ba src/tiny_tui/core.lg | sed -n '1,220p'; git status --short; git diff --name-status 71599287e1187a39ac6aa48920a92be1b2d2b652" in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+     1	;; tiny-tui.core — the public API.
+     2	;;
+     3	;; run: the minimal program loop. An app is three things:
+     4	;;   :init   initial state (a map)
+     5	;;   :update (fn [state msg] [new-state event]) — nil event keeps looping,
+     6	;;           any non-nil event stops the loop
+     7	;;   :view   (fn [state] string)
+     8	;;
+     9	;; run returns [final-state event]. It handles :ctrl-c itself (returns
+    10	;; event :ctrl-c without consulting :update) and treats :resize as a plain
+    11	;; redraw. Terminal size is injected as :tui/size before every view call.
+    12	;;
+    13	;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
+    14	;; they let whole flows run headlessly with scripted keys.
+    15	
+    16	(ns tiny-tui.core
+    17	  (:require [term]
+    18	            [tiny-tui.help :as help]
+    19	            [tiny-tui.key :as key]
+    20	            [tiny-tui.layout :as layout]
+    21	            [tiny-tui.list :as tlist]
+    22	            [tiny-tui.screen :as screen]
+    23	            [tiny-tui.style :as style]))
+    24	
+    25	(defn- run-loop [opts]
+    26	  (let [update-fn (:update opts)
+    27	        view (:view opts)
+    28	        read-key-fn (or (:read-key-fn opts) key/read)
+    29	        render-fn (or (:render-fn opts) screen/render!)]
+    30	    (loop [state (:init opts)]
+    31	      (let [state (assoc state :tui/size (or (term/size) [80 24]))]
+    32	        (render-fn (view state))
+    33	        (let [msg (read-key-fn)]
+    34	          (cond
+    35	            (nil? msg) [state nil]
+    36	            (= msg :ctrl-c) [state :ctrl-c]
+    37	            (= msg :resize) (recur state)
+    38	            :else (let [result (update-fn state msg)
+    39	                        next-state (first result)
+    40	                        event (second result)]
+    41	                    (if (nil? event)
+    42	                      (recur next-state)
+    43	                      [next-state event]))))))))
+    44	
+    45	(defn run
+    46	  "Run a TUI program (see namespace docstring). Returns [final-state event]."
+    47	  [opts]
+    48	  (if (false? (:screen opts))
+    49	    (run-loop opts)
+    50	    (screen/with-screen
+    51	      (run-loop opts))))
+    52	
+    53	(def ^:private select-bindings
+    54	  [{:key "↑/↓" :label "navigate"}
+    55	   {:key "enter" :label "select"}
+    56	   {:key "q" :label "quit"}])
+    57	
+    58	(defn- select-view [opts list-state]
+    59	  (apply layout/vstack
+    60	         (concat
+    61	          (when (:title opts)
+    62	            [(style/bold (:title opts)) ""])
+    63	          [(tlist/view list-state)
+    64	           ""
+    65	           (help/view select-bindings)])))
+    66	
+    67	(defn select
+    68	  "Show a navigable list and return the user's choice:
+    69	     {:type :select :item item :index n}  on enter
+    70	     {:type :cancel}                      on q / esc / Ctrl-C
+    71	   opts: :title, :items, :item->text (see tiny-tui.list/create), plus the
+    72	   run testing hooks (:read-key-fn :render-fn :screen)."
+    73	  [opts]
+    74	  (let [result (run {:init {:list (tlist/create opts)}
+    75	                     :update (fn [state msg]
+    76	                               (let [r (tlist/update (:list state) msg)]
+    77	                                 [(assoc state :list (first r)) (second r)]))
+    78	                     :view (fn [state] (select-view opts (:list state)))
+    79	                     :read-key-fn (:read-key-fn opts)
+    80	                     :render-fn (:render-fn opts)
+    81	                     :screen (:screen opts)})
+    82	        event (second result)]
+    83	    (if (map? event)
+    84	      event
+    85	      {:type :cancel})))
+ M src/tiny_tui/core.lg
+ M src/tiny_tui/screen.lg
+ M test/tiny_tui/core_test.lg
+?? .tmp/
+A	examples/counter.lg
+A	examples/static_screen.lg
+M	src/tiny_tui/core.lg
+A	src/tiny_tui/help.lg
+A	src/tiny_tui/key.lg
+A	src/tiny_tui/layout.lg
+A	src/tiny_tui/list.lg
+M	src/tiny_tui/screen.lg
+A	src/tiny_tui/style.lg
+M	test/tiny_tui/core_test.lg
+A	test/tiny_tui/help_test.lg
+A	test/tiny_tui/key_test.lg
+A	test/tiny_tui/layout_test.lg
+A	test/tiny_tui/list_test.lg
+A	test/tiny_tui/style_test.lg
+
+exec
+/bin/bash -lc 'lgx test 2>&1 || true; git diff -U80 71599287e1187a39ac6aa48920a92be1b2d2b652 -- src/tiny_tui/core.lg test/tiny_tui/core_test.lg main.lg examples/select_project.lg' in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+[38;5;35m=> Running tests in test/...[0m
+test/tiny_tui/core_test.lg
+  [38;5;35m✓[0m test-run-counter
+  [38;5;35m✓[0m test-run-ctrl-c-quits-without-update
+  [38;5;35m✓[0m test-run-resize-rerenders-without-update
+  [38;5;35m✓[0m test-run-injects-tui-size
+  [38;5;35m✓[0m test-select-picks-item
+  [38;5;35m✓[0m test-select-cancel
+  [38;5;35m✓[0m test-select-frame
+  [38;5;35m✓[0m test-select-without-title
+  [38;5;35m✓[0m test-run-eof-terminates
+
+test/tiny_tui/help_test.lg
+  [38;5;35m✓[0m test-view
+
+test/tiny_tui/key_test.lg
+  [38;5;35m✓[0m test-parse-arrows
+  [38;5;35m✓[0m test-parse-nav-keys
+  [38;5;35m✓[0m test-parse-named-keys
+  [38;5;35m✓[0m test-parse-control-keys
+  [38;5;35m✓[0m test-parse-printables-pass-through
+
+test/tiny_tui/layout_test.lg
+  [38;5;35m✓[0m test-lines
+  [38;5;35m✓[0m test-vstack
+  [38;5;35m✓[0m test-hstack
+  [38;5;35m✓[0m test-pad
+  [38;5;35m✓[0m test-box-single-line
+  [38;5;35m✓[0m test-box-multi-line
+  [38;5;35m✓[0m test-box-styled-content
+
+test/tiny_tui/list_test.lg
+  [38;5;35m✓[0m test-create
+  [38;5;35m✓[0m test-cursor-moves-and-clamps
+  [38;5;35m✓[0m test-enter-selects
+  [38;5;35m✓[0m test-quit-and-esc-cancel
+  [38;5;35m✓[0m test-unknown-message-ignored
+  [38;5;35m✓[0m test-view
+  [38;5;35m✓[0m test-item->text-defaults-to-str
+  [38;5;35m✓[0m test-empty-list
+
+test/tiny_tui/screen_test.lg
+  [38;5;35m✓[0m test-frame-str-single-line
+  [38;5;35m✓[0m test-frame-str-multi-line
+  [38;5;35m✓[0m test-frame-str-empty-string
+
+test/tiny_tui/style_test.lg
+  [38;5;35m✓[0m test-attrs
+  [38;5;35m✓[0m test-fg-colors
+  [38;5;35m✓[0m test-bg-colors
+  [38;5;35m✓[0m test-nesting
+  [38;5;35m✓[0m test-styled-combines-codes
+  [38;5;35m✓[0m test-strip-and-visible-width
+
+[38;5;35m39 tests, 98 assertions, 0 failures[0m
+OK
+diff --git a/src/tiny_tui/core.lg b/src/tiny_tui/core.lg
+index f6ef06a..e463992 100644
+--- a/src/tiny_tui/core.lg
++++ b/src/tiny_tui/core.lg
+@@ -1,5 +1,85 @@
+-(ns tiny-tui.core)
++;; tiny-tui.core — the public API.
++;;
++;; run: the minimal program loop. An app is three things:
++;;   :init   initial state (a map)
++;;   :update (fn [state msg] [new-state event]) — nil event keeps looping,
++;;           any non-nil event stops the loop
++;;   :view   (fn [state] string)
++;;
++;; run returns [final-state event]. It handles :ctrl-c itself (returns
++;; event :ctrl-c without consulting :update) and treats :resize as a plain
++;; redraw. Terminal size is injected as :tui/size before every view call.
++;;
++;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
++;; they let whole flows run headlessly with scripted keys.
+ 
+-(defn greet
+-  [name]
+-  (str "Welcome to " name "!"))
++(ns tiny-tui.core
++  (:require [term]
++            [tiny-tui.help :as help]
++            [tiny-tui.key :as key]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.list :as tlist]
++            [tiny-tui.screen :as screen]
++            [tiny-tui.style :as style]))
++
++(defn- run-loop [opts]
++  (let [update-fn (:update opts)
++        view (:view opts)
++        read-key-fn (or (:read-key-fn opts) key/read)
++        render-fn (or (:render-fn opts) screen/render!)]
++    (loop [state (:init opts)]
++      (let [state (assoc state :tui/size (or (term/size) [80 24]))]
++        (render-fn (view state))
++        (let [msg (read-key-fn)]
++          (cond
++            (nil? msg) [state nil]
++            (= msg :ctrl-c) [state :ctrl-c]
++            (= msg :resize) (recur state)
++            :else (let [result (update-fn state msg)
++                        next-state (first result)
++                        event (second result)]
++                    (if (nil? event)
++                      (recur next-state)
++                      [next-state event]))))))))
++
++(defn run
++  "Run a TUI program (see namespace docstring). Returns [final-state event]."
++  [opts]
++  (if (false? (:screen opts))
++    (run-loop opts)
++    (screen/with-screen
++      (run-loop opts))))
++
++(def ^:private select-bindings
++  [{:key "↑/↓" :label "navigate"}
++   {:key "enter" :label "select"}
++   {:key "q" :label "quit"}])
++
++(defn- select-view [opts list-state]
++  (apply layout/vstack
++         (concat
++          (when (:title opts)
++            [(style/bold (:title opts)) ""])
++          [(tlist/view list-state)
++           ""
++           (help/view select-bindings)])))
++
++(defn select
++  "Show a navigable list and return the user's choice:
++     {:type :select :item item :index n}  on enter
++     {:type :cancel}                      on q / esc / Ctrl-C
++   opts: :title, :items, :item->text (see tiny-tui.list/create), plus the
++   run testing hooks (:read-key-fn :render-fn :screen)."
++  [opts]
++  (let [result (run {:init {:list (tlist/create opts)}
++                     :update (fn [state msg]
++                               (let [r (tlist/update (:list state) msg)]
++                                 [(assoc state :list (first r)) (second r)]))
++                     :view (fn [state] (select-view opts (:list state)))
++                     :read-key-fn (:read-key-fn opts)
++                     :render-fn (:render-fn opts)
++                     :screen (:screen opts)})
++        event (second result)]
++    (if (map? event)
++      event
++      {:type :cancel})))
+diff --git a/test/tiny_tui/core_test.lg b/test/tiny_tui/core_test.lg
+index 37dc0ac..1f410ff 100644
+--- a/test/tiny_tui/core_test.lg
++++ b/test/tiny_tui/core_test.lg
+@@ -1,6 +1,131 @@
+-(ns tiny-tui.greeter-test
++(ns tiny-tui.core-test
+   (:require [clojure.test :refer :all]
+-            [tiny-tui.core :as c]))
++            [tiny-tui.core :as tui]
++            [tiny-tui.help :as help]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.list :as tlist]
++            [tiny-tui.style :as style]))
+ 
+-(deftest test-greet-ok
+-  (is (= "Welcome to let-go!" (c/greet "let-go"))))
++(defn scripted
++  "Read-fn that returns the scripted messages one by one, then nil (EOF)."
++  [msgs]
++  (let [q (atom (seq msgs))]
++    (fn []
++      (let [m (first @q)]
++        (swap! q rest)
++        m))))
++
++(defn counter-app [frames]
++  {:init {:count 0}
++   :update (fn [state msg]
++             (case msg
++               :up [(update state :count inc) nil]
++               :down [(update state :count dec) nil]
++               "q" [state :quit]
++               [state nil]))
++   :view (fn [state] (str "Count: " (:count state)))
++   :render-fn (fn [s] (swap! frames conj s))
++   :screen false})
++
++(deftest test-run-counter
++  (let [frames (atom [])
++        [state event] (tui/run (assoc (counter-app frames)
++                                      :read-key-fn (scripted [:up :up :down "q"])))]
++    (is (= 1 (:count state)))
++    (is (= :quit event))
++    ;; one frame per loop iteration: initial + after each of the 3 moves
++    (is (= 4 (count @frames)))
++    (is (= "Count: 1" (last @frames)))))
++
++(deftest test-run-ctrl-c-quits-without-update
++  (let [seen (atom [])
++        app {:init {}
++             :update (fn [state msg] (swap! seen conj msg) [state nil])
++             :view (fn [_] "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted [:ctrl-c])}
++        [_ event] (tui/run app)]
++    (is (= :ctrl-c event))
++    (is (= [] @seen))))
++
++(deftest test-run-resize-rerenders-without-update
++  (let [seen (atom [])
++        frames (atom [])
++        app {:init {}
++             :update (fn [state msg] (swap! seen conj msg) [state :quit])
++             :view (fn [_] "x")
++             :render-fn (fn [s] (swap! frames conj s))
++             :screen false
++             :read-key-fn (scripted [:resize "q"])}]
++    (tui/run app)
++    (is (= ["q"] @seen))
++    (is (= 2 (count @frames)))))
++
++(deftest test-run-injects-tui-size
++  (let [sizes (atom [])
++        app {:init {}
++             :update (fn [state _] [state :quit])
++             :view (fn [state] (swap! sizes conj (:tui/size state)) "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted ["q"])}]
++    (tui/run app)
++    (is (= [[80 24]] @sizes))))
++
++(def projects
++  [{:name "tiny-cli"} {:name "tiny-tui"} {:name "lgx"}])
++
++(defn select-opts [script frames]
++  {:title "Choose project"
++   :items projects
++   :item->text :name
++   :read-key-fn (scripted script)
++   :render-fn (fn [s] (swap! frames conj s))
++   :screen false})
++
++(deftest test-select-picks-item
++  (is (= {:type :select :item {:name "tiny-tui"} :index 1}
++         (tui/select (select-opts [:down :enter] (atom []))))))
++
++(deftest test-select-cancel
++  (is (= {:type :cancel} (tui/select (select-opts ["q"] (atom [])))))
++  (is (= {:type :cancel} (tui/select (select-opts [:esc] (atom [])))))
++  (is (= {:type :cancel} (tui/select (select-opts [:ctrl-c] (atom [])))))
++  ;; EOF also cancels
++  (is (= {:type :cancel} (tui/select (select-opts [] (atom []))))))
++
++(deftest test-select-frame
++  (let [frames (atom [])]
++    (tui/select (select-opts ["q"] frames))
++    (is (= (layout/vstack
++            (style/bold "Choose project")
++            ""
++            (tlist/view (tlist/create {:items projects :item->text :name}))
++            ""
++            (help/view [{:key "↑/↓" :label "navigate"}
++                        {:key "enter" :label "select"}
++                        {:key "q" :label "quit"}]))
++           (first @frames)))))
++
++(deftest test-select-without-title
++  (let [frames (atom [])]
++    (tui/select (assoc (select-opts ["q"] frames) :title nil))
++    (is (= (layout/vstack
++            (tlist/view (tlist/create {:items projects :item->text :name}))
++            ""
++            (help/view [{:key "↑/↓" :label "navigate"}
++                        {:key "enter" :label "select"}
++                        {:key "q" :label "quit"}]))
++           (first @frames)))))
++
++(deftest test-run-eof-terminates
++  (let [app {:init {:a 1}
++             :update (fn [state _] [state nil])
++             :view (fn [_] "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted [])}
++        [state event] (tui/run app)]
++    (is (= 1 (:a state)))
++    (is (nil? event))))
+
+exec
+/bin/bash -lc 'git diff --stat 71599287e1187a39ac6aa48920a92be1b2d2b652 && git diff --name-only 71599287e1187a39ac6aa48920a92be1b2d2b652' in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+ examples/counter.lg          |  30 ++++++++++
+ examples/static_screen.lg    |  24 ++++++++
+ main.lg                      |  16 ++++--
+ src/tiny_tui/core.lg         |  88 ++++++++++++++++++++++++++--
+ src/tiny_tui/help.lg         |  13 +++++
+ src/tiny_tui/key.lg          |  53 +++++++++++++++++
+ src/tiny_tui/layout.lg       |  41 +++++++++++++
+ src/tiny_tui/list.lg         |  57 +++++++++++++++++++
+ src/tiny_tui/screen.lg       |   2 +-
+ src/tiny_tui/style.lg        |  83 +++++++++++++++++++++++++++
+ test/tiny_tui/core_test.lg   | 133 +++++++++++++++++++++++++++++++++++++++++--
+ test/tiny_tui/help_test.lg   |  20 +++++++
+ test/tiny_tui/key_test.lg    |  38 +++++++++++++
+ test/tiny_tui/layout_test.lg |  48 ++++++++++++++++
+ test/tiny_tui/list_test.lg   |  75 ++++++++++++++++++++++++
+ test/tiny_tui/style_test.lg  |  38 +++++++++++++
+ 16 files changed, 744 insertions(+), 15 deletions(-)
+examples/counter.lg
+examples/static_screen.lg
+main.lg
+src/tiny_tui/core.lg
+src/tiny_tui/help.lg
+src/tiny_tui/key.lg
+src/tiny_tui/layout.lg
+src/tiny_tui/list.lg
+src/tiny_tui/screen.lg
+src/tiny_tui/style.lg
+test/tiny_tui/core_test.lg
+test/tiny_tui/help_test.lg
+test/tiny_tui/key_test.lg
+test/tiny_tui/layout_test.lg
+test/tiny_tui/list_test.lg
+test/tiny_tui/style_test.lg
+
+exec
+/bin/bash -lc 'git diff -U80 71599287e1187a39ac6aa48920a92be1b2d2b652 -- main.lg src/tiny_tui/core.lg test/tiny_tui/core_test.lg' in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+diff --git a/main.lg b/main.lg
+index b7b4479..1ad68cd 100644
+--- a/main.lg
++++ b/main.lg
+@@ -1,14 +1,18 @@
+ (ns tiny-tui.main
+-  (:require [term]
+-            [tiny-tui.screen :as screen]))
++  (:require [tiny-tui.core :as tui]))
++
++(def projects
++  [{:id 1 :name "tiny-cli"}
++   {:id 2 :name "tiny-tui"}
++   {:id 3 :name "lgx"}])
+ 
+ (defn- main []
+-  (screen/with-screen
+-    (screen/render! "Hello from tiny-tui — press any key to exit")
+-    (term/read-key))
+-  (println "Terminal restored."))
++  (let [result (tui/select {:title "Select project"
++                            :items projects
++                            :item->text :name})]
++    (println "Result:" result)))
+ 
+ ; Top-level forms run during AOT compilation too. Guard so `lg -b` doesn't
+ ; execute the CLI while bundling.
+ (when-not *compiling-aot*
+   (main))
+diff --git a/src/tiny_tui/core.lg b/src/tiny_tui/core.lg
+index f6ef06a..e463992 100644
+--- a/src/tiny_tui/core.lg
++++ b/src/tiny_tui/core.lg
+@@ -1,5 +1,85 @@
+-(ns tiny-tui.core)
++;; tiny-tui.core — the public API.
++;;
++;; run: the minimal program loop. An app is three things:
++;;   :init   initial state (a map)
++;;   :update (fn [state msg] [new-state event]) — nil event keeps looping,
++;;           any non-nil event stops the loop
++;;   :view   (fn [state] string)
++;;
++;; run returns [final-state event]. It handles :ctrl-c itself (returns
++;; event :ctrl-c without consulting :update) and treats :resize as a plain
++;; redraw. Terminal size is injected as :tui/size before every view call.
++;;
++;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
++;; they let whole flows run headlessly with scripted keys.
+ 
+-(defn greet
+-  [name]
+-  (str "Welcome to " name "!"))
++(ns tiny-tui.core
++  (:require [term]
++            [tiny-tui.help :as help]
++            [tiny-tui.key :as key]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.list :as tlist]
++            [tiny-tui.screen :as screen]
++            [tiny-tui.style :as style]))
++
++(defn- run-loop [opts]
++  (let [update-fn (:update opts)
++        view (:view opts)
++        read-key-fn (or (:read-key-fn opts) key/read)
++        render-fn (or (:render-fn opts) screen/render!)]
++    (loop [state (:init opts)]
++      (let [state (assoc state :tui/size (or (term/size) [80 24]))]
++        (render-fn (view state))
++        (let [msg (read-key-fn)]
++          (cond
++            (nil? msg) [state nil]
++            (= msg :ctrl-c) [state :ctrl-c]
++            (= msg :resize) (recur state)
++            :else (let [result (update-fn state msg)
++                        next-state (first result)
++                        event (second result)]
++                    (if (nil? event)
++                      (recur next-state)
++                      [next-state event]))))))))
++
++(defn run
++  "Run a TUI program (see namespace docstring). Returns [final-state event]."
++  [opts]
++  (if (false? (:screen opts))
++    (run-loop opts)
++    (screen/with-screen
++      (run-loop opts))))
++
++(def ^:private select-bindings
++  [{:key "↑/↓" :label "navigate"}
++   {:key "enter" :label "select"}
++   {:key "q" :label "quit"}])
++
++(defn- select-view [opts list-state]
++  (apply layout/vstack
++         (concat
++          (when (:title opts)
++            [(style/bold (:title opts)) ""])
++          [(tlist/view list-state)
++           ""
++           (help/view select-bindings)])))
++
++(defn select
++  "Show a navigable list and return the user's choice:
++     {:type :select :item item :index n}  on enter
++     {:type :cancel}                      on q / esc / Ctrl-C
++   opts: :title, :items, :item->text (see tiny-tui.list/create), plus the
++   run testing hooks (:read-key-fn :render-fn :screen)."
++  [opts]
++  (let [result (run {:init {:list (tlist/create opts)}
++                     :update (fn [state msg]
++                               (let [r (tlist/update (:list state) msg)]
++                                 [(assoc state :list (first r)) (second r)]))
++                     :view (fn [state] (select-view opts (:list state)))
++                     :read-key-fn (:read-key-fn opts)
++                     :render-fn (:render-fn opts)
++                     :screen (:screen opts)})
++        event (second result)]
++    (if (map? event)
++      event
++      {:type :cancel})))
+diff --git a/test/tiny_tui/core_test.lg b/test/tiny_tui/core_test.lg
+index 37dc0ac..1f410ff 100644
+--- a/test/tiny_tui/core_test.lg
++++ b/test/tiny_tui/core_test.lg
+@@ -1,6 +1,131 @@
+-(ns tiny-tui.greeter-test
++(ns tiny-tui.core-test
+   (:require [clojure.test :refer :all]
+-            [tiny-tui.core :as c]))
++            [tiny-tui.core :as tui]
++            [tiny-tui.help :as help]
++            [tiny-tui.layout :as layout]
++            [tiny-tui.list :as tlist]
++            [tiny-tui.style :as style]))
+ 
+-(deftest test-greet-ok
+-  (is (= "Welcome to let-go!" (c/greet "let-go"))))
++(defn scripted
++  "Read-fn that returns the scripted messages one by one, then nil (EOF)."
++  [msgs]
++  (let [q (atom (seq msgs))]
++    (fn []
++      (let [m (first @q)]
++        (swap! q rest)
++        m))))
++
++(defn counter-app [frames]
++  {:init {:count 0}
++   :update (fn [state msg]
++             (case msg
++               :up [(update state :count inc) nil]
++               :down [(update state :count dec) nil]
++               "q" [state :quit]
++               [state nil]))
++   :view (fn [state] (str "Count: " (:count state)))
++   :render-fn (fn [s] (swap! frames conj s))
++   :screen false})
++
++(deftest test-run-counter
++  (let [frames (atom [])
++        [state event] (tui/run (assoc (counter-app frames)
++                                      :read-key-fn (scripted [:up :up :down "q"])))]
++    (is (= 1 (:count state)))
++    (is (= :quit event))
++    ;; one frame per loop iteration: initial + after each of the 3 moves
++    (is (= 4 (count @frames)))
++    (is (= "Count: 1" (last @frames)))))
++
++(deftest test-run-ctrl-c-quits-without-update
++  (let [seen (atom [])
++        app {:init {}
++             :update (fn [state msg] (swap! seen conj msg) [state nil])
++             :view (fn [_] "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted [:ctrl-c])}
++        [_ event] (tui/run app)]
++    (is (= :ctrl-c event))
++    (is (= [] @seen))))
++
++(deftest test-run-resize-rerenders-without-update
++  (let [seen (atom [])
++        frames (atom [])
++        app {:init {}
++             :update (fn [state msg] (swap! seen conj msg) [state :quit])
++             :view (fn [_] "x")
++             :render-fn (fn [s] (swap! frames conj s))
++             :screen false
++             :read-key-fn (scripted [:resize "q"])}]
++    (tui/run app)
++    (is (= ["q"] @seen))
++    (is (= 2 (count @frames)))))
++
++(deftest test-run-injects-tui-size
++  (let [sizes (atom [])
++        app {:init {}
++             :update (fn [state _] [state :quit])
++             :view (fn [state] (swap! sizes conj (:tui/size state)) "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted ["q"])}]
++    (tui/run app)
++    (is (= [[80 24]] @sizes))))
++
++(def projects
++  [{:name "tiny-cli"} {:name "tiny-tui"} {:name "lgx"}])
++
++(defn select-opts [script frames]
++  {:title "Choose project"
++   :items projects
++   :item->text :name
++   :read-key-fn (scripted script)
++   :render-fn (fn [s] (swap! frames conj s))
++   :screen false})
++
++(deftest test-select-picks-item
++  (is (= {:type :select :item {:name "tiny-tui"} :index 1}
++         (tui/select (select-opts [:down :enter] (atom []))))))
++
++(deftest test-select-cancel
++  (is (= {:type :cancel} (tui/select (select-opts ["q"] (atom [])))))
++  (is (= {:type :cancel} (tui/select (select-opts [:esc] (atom [])))))
++  (is (= {:type :cancel} (tui/select (select-opts [:ctrl-c] (atom [])))))
++  ;; EOF also cancels
++  (is (= {:type :cancel} (tui/select (select-opts [] (atom []))))))
++
++(deftest test-select-frame
++  (let [frames (atom [])]
++    (tui/select (select-opts ["q"] frames))
++    (is (= (layout/vstack
++            (style/bold "Choose project")
++            ""
++            (tlist/view (tlist/create {:items projects :item->text :name}))
++            ""
++            (help/view [{:key "↑/↓" :label "navigate"}
++                        {:key "enter" :label "select"}
++                        {:key "q" :label "quit"}]))
++           (first @frames)))))
++
++(deftest test-select-without-title
++  (let [frames (atom [])]
++    (tui/select (assoc (select-opts ["q"] frames) :title nil))
++    (is (= (layout/vstack
++            (tlist/view (tlist/create {:items projects :item->text :name}))
++            ""
++            (help/view [{:key "↑/↓" :label "navigate"}
++                        {:key "enter" :label "select"}
++                        {:key "q" :label "quit"}]))
++           (first @frames)))))
++
++(deftest test-run-eof-terminates
++  (let [app {:init {:a 1}
++             :update (fn [state _] [state nil])
++             :view (fn [_] "x")
++             :render-fn (fn [_] nil)
++             :screen false
++             :read-key-fn (scripted [])}
++        [state event] (tui/run app)]
++    (is (= 1 (:a state)))
++    (is (nil? event))))
+
+exec
+/bin/bash -lc "lg -source-paths src:. -e '(require (quote tiny-tui.core)) (def q (atom (list :enter))) (println (tiny-tui.core/select {:items [nil] :read-key-fn (fn [] (let [m (first @q)] (swap"'! q rest) m)) :render-fn (fn [_] nil) :screen false}))'"' 2>&1 || true" in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+{:type :cancel}
+nil
+
+exec
+/bin/bash -lc "nl -ba src/tiny_tui/list.lg | sed -n '1,80p'; nl -ba src/tiny_tui/core.lg | sed -n '50,90p'" in /Users/andrew/Projects/tiny-tui
+ succeeded in 0ms:
+     1	;; tiny-tui.list — a pure list widget. No pagination, no scrolling (V1
+     2	;; non-goals): state in, [state event] out, string view.
+     3	
+     4	(ns tiny-tui.list
+     5	  (:require [string]
+     6	            [tiny-tui.style :as style]))
+     7	
+     8	(defn create
+     9	  "opts: {:items [...] :item->text fn :empty-text \"...\"}"
+    10	  [opts]
+    11	  {:items (vec (:items opts))
+    12	   :item->text (or (:item->text opts) str)
+    13	   :empty-text (or (:empty-text opts) "No items.")
+    14	   :cursor 0})
+    15	
+    16	(defn selected-index [l]
+    17	  (when (seq (:items l))
+    18	    (:cursor l)))
+    19	
+    20	(defn selected-item [l]
+    21	  (when (seq (:items l))
+    22	    (nth (:items l) (:cursor l))))
+    23	
+    24	(defn- move [l delta]
+    25	  (let [n (count (:items l))]
+    26	    (if (zero? n)
+    27	      l
+    28	      (assoc l :cursor (min (dec n) (max 0 (+ (:cursor l) delta)))))))
+    29	
+    30	(defn- select-event [l]
+    31	  (when-let [item (selected-item l)]
+    32	    {:type :select
+    33	     :item item
+    34	     :index (:cursor l)}))
+    35	
+    36	(defn update
+    37	  "Returns [new-state event]. Events: {:type :select ...} on enter,
+    38	   {:type :cancel} on q/esc, nil otherwise."
+    39	  [l msg]
+    40	  (cond
+    41	    (= msg :up) [(move l -1) nil]
+    42	    (= msg :down) [(move l 1) nil]
+    43	    (= msg :enter) [l (select-event l)]
+    44	    (or (= msg "q") (= msg :esc)) [l {:type :cancel}]
+    45	    :else [l nil]))
+    46	
+    47	(defn view [l]
+    48	  (if (empty? (:items l))
+    49	    (:empty-text l)
+    50	    (string/join "\n"
+    51	                 (map-indexed
+    52	                   (fn [i item]
+    53	                     (let [text ((:item->text l) item)]
+    54	                       (if (= i (:cursor l))
+    55	                         (str "› " (style/inverse text))
+    56	                         (str "  " text))))
+    57	                   (:items l)))))
+    50	    (screen/with-screen
+    51	      (run-loop opts))))
+    52	
+    53	(def ^:private select-bindings
+    54	  [{:key "↑/↓" :label "navigate"}
+    55	   {:key "enter" :label "select"}
+    56	   {:key "q" :label "quit"}])
+    57	
+    58	(defn- select-view [opts list-state]
+    59	  (apply layout/vstack
+    60	         (concat
+    61	          (when (:title opts)
+    62	            [(style/bold (:title opts)) ""])
+    63	          [(tlist/view list-state)
+    64	           ""
+    65	           (help/view select-bindings)])))
+    66	
+    67	(defn select
+    68	  "Show a navigable list and return the user's choice:
+    69	     {:type :select :item item :index n}  on enter
+    70	     {:type :cancel}                      on q / esc / Ctrl-C
+    71	   opts: :title, :items, :item->text (see tiny-tui.list/create), plus the
+    72	   run testing hooks (:read-key-fn :render-fn :screen)."
+    73	  [opts]
+    74	  (let [result (run {:init {:list (tlist/create opts)}
+    75	                     :update (fn [state msg]
+    76	                               (let [r (tlist/update (:list state) msg)]
+    77	                                 [(assoc state :list (first r)) (second r)]))
+    78	                     :view (fn [state] (select-view opts (:list state)))
+    79	                     :read-key-fn (:read-key-fn opts)
+    80	                     :render-fn (:render-fn opts)
+    81	                     :screen (:screen opts)})
+    82	        event (second result)]
+    83	    (if (map? event)
+    84	      event
+    85	      {:type :cancel})))
+
+codex
+The patch passes the current tests, but the new generic list/select flow cannot select falsey items and reports cancellation instead. This is a functional edge-case bug in the introduced widget behavior.
+
+Review comment:
+
+- [P2] Allow selecting falsey list items — /Users/andrew/Projects/tiny-tui/src/tiny_tui/list.lg:31-32
+  When the selected item is `nil` or `false`, `when-let` treats it as absent, so pressing Enter emits no select event; through `tui/select` this keeps looping until EOF and then returns `{:type :cancel}` even though the list is non-empty. Since the widget accepts arbitrary `:items`, the selection check should be based on list non-emptiness/index validity rather than item truthiness.
+The patch passes the current tests, but the new generic list/select flow cannot select falsey items and reports cancellation instead. This is a functional edge-case bug in the introduced widget behavior.
+
+Review comment:
+
+- [P2] Allow selecting falsey list items — /Users/andrew/Projects/tiny-tui/src/tiny_tui/list.lg:31-32
+  When the selected item is `nil` or `false`, `when-let` treats it as absent, so pressing Enter emits no select event; through `tui/select` this keeps looping until EOF and then returns `{:type :cancel}` even though the list is non-empty. Since the widget accepts arbitrary `:items`, the selection check should be based on list non-emptiness/index validity rather than item truthiness.

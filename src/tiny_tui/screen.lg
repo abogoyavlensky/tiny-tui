@@ -55,7 +55,7 @@
     (term/clear)
     (term/flush)
     (catch e
-      (shutdown!)
+           (shutdown!)
       (throw e))))
 
 (defn render!
