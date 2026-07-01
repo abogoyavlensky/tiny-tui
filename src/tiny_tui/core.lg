@@ -51,37 +51,6 @@
     (screen/with-screen
       (run-loop opts))))
 
-(defn- select-view [opts list-state]
-  (apply layout/vstack
-         (concat
-           (when (:title opts)
-             [(style/bold (:title opts)) ""])
-           [(tlist/view list-state)
-            ""
-            (help/view (tlist/bindings list-state))])))
-
-(defn select
-  "Show a navigable list and return the user's choice:
-     {:type :select :item item :index n}                on enter
-     {:type :action :action id :item item :index n
-      :destructive? true (when set)}                    on an action key
-     {:type :cancel}                                    on q / esc / Ctrl-C
-   opts: :title, :items, :item->text, :actions (see tiny-tui.list/create),
-   plus the run testing hooks (:read-key-fn :render-fn :screen)."
-  [opts]
-  (let [result (run {:init {:list (tlist/create opts)}
-                     :update (fn [state msg]
-                               (let [r (tlist/update (:list state) msg)]
-                                 [(assoc state :list (first r)) (second r)]))
-                     :view (fn [state] (select-view opts (:list state)))
-                     :read-key-fn (:read-key-fn opts)
-                     :render-fn (:render-fn opts)
-                     :screen (:screen opts)})
-        event (second result)]
-    (if (map? event)
-      event
-      {:type :cancel})))
-
 (def ^:private confirm-bindings
   [{:key "↑/↓"
     :label "navigate"}
@@ -89,6 +58,86 @@
     :label "select"}
    {:key "esc"
     :label "cancel"}])
+
+(defn- confirm-view [confirm-state]
+  (layout/vstack
+    (tconfirm/view confirm-state)
+    ""
+    (help/view confirm-bindings)))
+
+(defn- select-view [opts state]
+  (if (= :confirm (:mode state))
+    (confirm-view (:confirm state))
+    (apply layout/vstack
+           (concat
+             (when (:title opts)
+               [(style/bold (:title opts)) ""])
+             [(tlist/view (:list state))
+              ""
+              (help/view (tlist/bindings (:list state)))]))))
+
+(defn- action-config [opts event]
+  (first (filter (fn [a] (= (:action event) (:id a))) (:actions opts))))
+
+(defn- needs-confirm? [action]
+  (boolean (or (:confirm? action) (:destructive? action))))
+
+(defn- confirm-for-action [action event]
+  (let [m (:confirm-message action)]
+    (tconfirm/create
+      {:title (or (:confirm-title action) "Are you sure?")
+       :message (cond
+                  (nil? m) nil
+                  (string? m) m
+                  :else (m (:item event)))
+       :confirm-label (or (:label action) "yes")
+       :cancel-label "cancel"})))
+
+(defn- select-update [opts state msg]
+  (if (= :confirm (:mode state))
+    ;; confirmation owns every key while open
+    (let [r (tconfirm/update (:confirm state) msg)
+          event (second r)]
+      (cond
+        (nil? event) [(assoc state :confirm (first r)) nil]
+        (:value event) [state (assoc (:pending-action state) :confirmed? true)]
+        :else [(assoc state :mode :list :confirm nil :pending-action nil) nil]))
+    (let [r (tlist/update (:list state) msg)
+          event (second r)
+          state (assoc state :list (first r))
+          action (when (= :action (:type event)) (action-config opts event))]
+      (if (and action (needs-confirm? action))
+        [(assoc state
+                :mode :confirm
+                :confirm (confirm-for-action action event)
+                :pending-action event)
+         nil]
+        [state event]))))
+
+(defn select
+  "Show a navigable list and return the user's choice:
+     {:type :select :item item :index n}                on enter
+     {:type :action :action id :item item :index n
+      :destructive? true (when set)}                    on an action key
+     {:type :cancel}                                    on q / esc / Ctrl-C
+   An action with :confirm? or :destructive? set first opens a yes/no
+   confirmation (configured by its :confirm-title and :confirm-message —
+   a string or a fn of the item); the accepted action event carries
+   :confirmed? true.
+   opts: :title, :items, :item->text, :actions (see tiny-tui.list/create),
+   plus the run testing hooks (:read-key-fn :render-fn :screen)."
+  [opts]
+  (let [result (run {:init {:mode :list
+                            :list (tlist/create opts)}
+                     :update (fn [state msg] (select-update opts state msg))
+                     :view (fn [state] (select-view opts state))
+                     :read-key-fn (:read-key-fn opts)
+                     :render-fn (:render-fn opts)
+                     :screen (:screen opts)})
+        event (second result)]
+    (if (map? event)
+      event
+      {:type :cancel})))
 
 (defn confirm
   "Ask a yes/no question and return a plain boolean. Cancelling (esc, q,

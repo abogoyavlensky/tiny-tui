@@ -136,15 +136,6 @@
    :label "delete"
    :destructive? true})
 
-(deftest test-select-action-event
-  (is (= {:type :action
-          :action :delete
-          :item {:name "tiny-cli"}
-          :index 0
-          :destructive? true}
-         (tui/select (assoc (select-opts ["d"] (atom []))
-                            :actions [delete-action])))))
-
 (deftest test-select-frame-includes-action-help
   (let [frames (atom [])
         opts {:items projects
@@ -158,6 +149,72 @@
              ""
              (help/view (tlist/bindings (tlist/create opts))))
            (first @frames)))))
+
+(def confirmed-delete-action
+  {:id :delete
+   :key "d"
+   :label "delete"
+   :destructive? true
+   :confirm-title "Delete project?"
+   :confirm-message (fn [item] (str "Delete " (:name item) "?"))})
+
+(def open-action
+  {:id :open
+   :key "o"
+   :label "open"})
+
+(defn gated-opts [script frames]
+  (assoc (select-opts script frames)
+         :actions [open-action confirmed-delete-action]))
+
+(deftest test-destructive-action-confirmed
+  (is (= {:type :action
+          :action :delete
+          :item {:name "tiny-cli"}
+          :index 0
+          :destructive? true
+          :confirmed? true}
+         (tui/select (gated-opts ["d" "y"] (atom []))))))
+
+(deftest test-destructive-action-cancelled-returns-to-list
+  ;; "n" dismisses the confirmation; the next enter selects the item the
+  ;; list cursor was on all along
+  (is (= {:type :select
+          :item {:name "tiny-cli"}
+          :index 0}
+         (tui/select (gated-opts ["d" "n" :enter] (atom []))))))
+
+(deftest test-confirm-mode-captures-keys
+  ;; :down moves the confirm cursor (to "cancel"), not the list cursor;
+  ;; enter then cancels, and the final enter selects the unchanged item 0
+  (is (= {:type :select
+          :item {:name "tiny-cli"}
+          :index 0}
+         (tui/select (gated-opts ["d" :down :enter :enter] (atom []))))))
+
+(deftest test-non-destructive-action-skips-confirmation
+  (is (= {:type :action
+          :action :open
+          :item {:name "tiny-cli"}
+          :index 0}
+         (tui/select (gated-opts ["o"] (atom []))))))
+
+(deftest test-confirm-mode-frame
+  (let [frames (atom [])]
+    (tui/select (gated-opts ["d" "y"] frames))
+    (is (= (layout/vstack
+             (tconfirm/view (tconfirm/create {:title "Delete project?"
+                                              :message "Delete tiny-cli?"
+                                              :confirm-label "delete"
+                                              :cancel-label "cancel"}))
+             ""
+             (help/view [{:key "↑/↓"
+                          :label "navigate"}
+                         {:key "enter"
+                          :label "select"}
+                         {:key "esc"
+                          :label "cancel"}]))
+           (last @frames)))))
 
 (defn confirm-opts [script frames]
   {:title "Delete project?"
