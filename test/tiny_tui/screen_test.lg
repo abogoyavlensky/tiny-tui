@@ -1,0 +1,24 @@
+(ns tiny-tui.screen-test
+  (:require [clojure.test :refer :all]
+            [tiny-tui.screen :as screen]))
+
+(def ESC (str (char 27)))
+(def home (str ESC "[H"))
+(def clear-eol (str ESC "[K"))
+(def clear-below (str ESC "[J"))
+
+(deftest test-frame-str-single-line
+  (is (= (str home "Hello" clear-eol clear-below)
+         (screen/frame-str "Hello"))))
+
+(deftest test-frame-str-multi-line
+  (is (= (str home
+              "one" clear-eol "\r\n"
+              "two" clear-eol "\r\n"
+              "three" clear-eol
+              clear-below)
+         (screen/frame-str "one\ntwo\nthree"))))
+
+(deftest test-frame-str-empty-string
+  (is (= (str home clear-eol clear-below)
+         (screen/frame-str ""))))

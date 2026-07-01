@@ -1,14 +1,15 @@
-(ns tiny-tui.main
+;; Stage 0 smoke test: enter TUI mode, show a message, exit on any key.
+;;
+;; Run from the repo root: lg examples/hello_screen.lg
+
+(ns examples.hello-screen
   (:require [term]
             [tiny-tui.screen :as screen]))
 
-(defn- main []
+(defn -main []
   (screen/with-screen
     (screen/render! "Hello from tiny-tui — press any key to exit")
     (term/read-key))
   (println "Terminal restored."))
 
-; Top-level forms run during AOT compilation too. Guard so `lg -b` doesn't
-; execute the CLI while bundling.
-(when-not *compiling-aot*
-  (main))
+(when-not *compiling-aot* (-main))

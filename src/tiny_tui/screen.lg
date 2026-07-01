@@ -1,0 +1,74 @@
+;; tiny-tui.screen — terminal ownership: entering/leaving raw interactive
+;; mode safely, and writing full frames.
+;;
+;; This is one of the two namespaces allowed to touch the terminal (the
+;; other is tiny-tui.key). Everything else in tiny-tui is pure.
+;;
+;; Escape codes are built with (char 27) rather than written as literal
+;; control characters, so the source stays readable and editing tools can't
+;; corrupt it.
+
+(ns tiny-tui.screen
+  (:require [string]
+            [term]))
+
+(def ^:private ESC (str (char 27)))
+(def ^:private home (str ESC "[H"))
+(def ^:private clear-eol (str ESC "[K"))
+(def ^:private clear-below (str ESC "[J"))
+
+(defn frame-str
+  "Build the ANSI string for one full-frame render of view string `s`:
+   cursor home, each line followed by clear-to-end-of-line, lines joined
+   with \\r\\n (raw mode needs the \\r), then clear everything below.
+   Clearing per line instead of wiping the whole screen avoids flicker."
+  [s]
+  (let [lines (string/split s "\n")
+        lines (if (empty? lines) [""] lines)]
+    (str home
+         (string/join (str clear-eol "\r\n") lines)
+         clear-eol
+         clear-below)))
+
+(defn init!
+  "Take over the terminal: raw mode, alternate screen, hidden cursor.
+   Throws when stdin/stdout is not a terminal (term/size returns nil)."
+  []
+  (when (nil? (term/size))
+    (throw (ex-info "tiny-tui requires a terminal (stdin/stdout is not a tty)" {})))
+  (term/raw-mode!)
+  (term/alternate-screen)
+  (term/hide-cursor)
+  (term/clear)
+  (term/flush))
+
+(defn shutdown!
+  "Give the terminal back: restore style, cursor, main screen and cooked
+   mode. Safe to call even if init! only partially succeeded."
+  []
+  (term/reset-style)
+  (term/show-cursor)
+  (term/main-screen)
+  (term/flush)
+  (term/restore-mode!))
+
+(defn render!
+  "Write one full frame built from view string `s`."
+  [s]
+  (term/write (frame-str s))
+  (term/flush))
+
+(defn clear!
+  []
+  (term/clear)
+  (term/flush))
+
+(defmacro with-screen
+  "Run `body` with the terminal in TUI mode, guaranteeing cleanup even when
+   an exception escapes."
+  [& body]
+  (list 'do
+        (list 'tiny-tui.screen/init!)
+        (list 'try
+              (cons 'do body)
+              (list 'finally (list 'tiny-tui.screen/shutdown!)))))
