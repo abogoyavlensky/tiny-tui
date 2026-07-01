@@ -1,0 +1,63 @@
+(ns tiny-tui.confirm-test
+  (:require [clojure.test :refer :all]
+            [tiny-tui.confirm :as tconfirm]
+            [tiny-tui.layout :as layout]
+            [tiny-tui.list :as tlist]
+            [tiny-tui.style :as style]))
+
+(defn make []
+  (tconfirm/create {:title "Delete dependency?"
+                    :message "Remove org/example from lgx.edn?"
+                    :confirm-label "delete"
+                    :cancel-label "cancel"}))
+
+(deftest test-navigation-and-enter
+  (let [c (make)]
+    ;; enter on initial cursor -> confirm
+    (is (= {:type :confirm
+            :value true}
+           (second (tconfirm/update c :enter))))
+    ;; down + enter -> cancel
+    (let [c' (first (tconfirm/update c :down))]
+      (is (= {:type :confirm
+              :value false}
+             (second (tconfirm/update c' :enter)))))
+    ;; moving alone emits no event
+    (is (nil? (second (tconfirm/update c :down))))))
+
+(deftest test-shortcuts
+  (let [c (make)]
+    (is (= {:type :confirm
+            :value true} (second (tconfirm/update c "y"))))
+    (is (= {:type :confirm
+            :value false} (second (tconfirm/update c "n"))))
+    (is (= {:type :confirm
+            :value false} (second (tconfirm/update c :esc))))
+    (is (= {:type :confirm
+            :value false} (second (tconfirm/update c "q"))))
+    (is (nil? (second (tconfirm/update c "z"))))))
+
+(deftest test-default-labels
+  (let [c (tconfirm/create {:title "Sure?"})]
+    (is (= (layout/vstack
+             (style/bold "Sure?")
+             ""
+             (tlist/view (tlist/create {:items [{:value true
+                                                 :label "yes"}
+                                                {:value false
+                                                 :label "no"}]
+                                        :item->text :label})))
+           (tconfirm/view c)))))
+
+(deftest test-view-with-message
+  (is (= (layout/vstack
+           (style/bold "Delete dependency?")
+           ""
+           "Remove org/example from lgx.edn?"
+           ""
+           (tlist/view (tlist/create {:items [{:value true
+                                               :label "delete"}
+                                              {:value false
+                                               :label "cancel"}]
+                                      :item->text :label})))
+         (tconfirm/view (make)))))

@@ -1,0 +1,16 @@
+;; Stage 6 demo: a yes/no confirmation with tui/confirm.
+;;
+;; Run from the repo root: LG_SOURCE_PATHS=src lg examples/confirm_delete.lg
+
+(ns examples.confirm-delete
+  (:require [tiny-tui.core :as tui]))
+
+(defn -main []
+  (if (tui/confirm {:title "Delete project?"
+                    :message "This cannot be undone."
+                    :confirm-label "delete"
+                    :cancel-label "cancel"})
+    (println "Confirmed: deleting.")
+    (println "Cancelled.")))
+
+(when-not *compiling-aot* (-main))

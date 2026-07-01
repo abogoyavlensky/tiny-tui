@@ -1,0 +1,48 @@
+;; tiny-tui.confirm — a pure yes/no confirmation widget, built as a thin
+;; wrapper over the list widget: a two-entry list (confirm / cancel) under a
+;; title and optional message. y/n work as shortcuts; esc/q cancel.
+
+(ns tiny-tui.confirm
+  (:require [tiny-tui.layout :as layout]
+            [tiny-tui.list :as tlist]
+            [tiny-tui.style :as style]))
+
+(defn create
+  "opts: {:title \"...\" :message \"...\"
+          :confirm-label \"yes\" :cancel-label \"no\"}
+   The cursor starts on the confirm entry."
+  [opts]
+  {:title (:title opts)
+   :message (:message opts)
+   :list (tlist/create {:items [{:value true
+                                 :label (or (:confirm-label opts) "yes")}
+                                {:value false
+                                 :label (or (:cancel-label opts) "no")}]
+                        :item->text :label})})
+
+(defn update
+  "Returns [new-state event]. Event is {:type :confirm :value bool} when
+   the user decides, nil while navigating."
+  [c msg]
+  (cond
+    (= msg "y") [c {:type :confirm
+                    :value true}]
+    (= msg "n") [c {:type :confirm
+                    :value false}]
+    :else
+    (let [result (tlist/update (:list c) msg)
+          l (first result)
+          event (second result)]
+      (cond
+        (= :select (:type event)) [c {:type :confirm
+                                      :value (:value (:item event))}]
+        (= :cancel (:type event)) [c {:type :confirm
+                                      :value false}]
+        :else [(assoc c :list l) nil]))))
+
+(defn view [c]
+  (apply layout/vstack
+         (concat
+           (when (:title c) [(style/bold (:title c)) ""])
+           (when (:message c) [(:message c) ""])
+           [(tlist/view (:list c))])))

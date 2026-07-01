@@ -1,5 +1,6 @@
 (ns tiny-tui.core-test
   (:require [clojure.test :refer :all]
+            [tiny-tui.confirm :as tconfirm]
             [tiny-tui.core :as tui]
             [tiny-tui.help :as help]
             [tiny-tui.layout :as layout]
@@ -156,6 +157,43 @@
              (tlist/view (tlist/create opts))
              ""
              (help/view (tlist/bindings (tlist/create opts))))
+           (first @frames)))))
+
+(defn confirm-opts [script frames]
+  {:title "Delete project?"
+   :message "This cannot be undone."
+   :confirm-label "delete"
+   :cancel-label "cancel"
+   :read-key-fn (scripted script)
+   :render-fn (fn [s] (swap! frames conj s))
+   :screen false})
+
+(deftest test-confirm-returns-boolean
+  ;; cursor starts on the confirm entry
+  (is (= true (tui/confirm (confirm-opts [:enter] (atom [])))))
+  (is (= false (tui/confirm (confirm-opts [:down :enter] (atom [])))))
+  (is (= true (tui/confirm (confirm-opts ["y"] (atom [])))))
+  (is (= false (tui/confirm (confirm-opts ["n"] (atom [])))))
+  (is (= false (tui/confirm (confirm-opts [:esc] (atom [])))))
+  (is (= false (tui/confirm (confirm-opts [:ctrl-c] (atom [])))))
+  ;; EOF cancels
+  (is (= false (tui/confirm (confirm-opts [] (atom []))))))
+
+(deftest test-confirm-frame
+  (let [frames (atom [])]
+    (tui/confirm (confirm-opts ["n"] frames))
+    (is (= (layout/vstack
+             (tconfirm/view (tconfirm/create {:title "Delete project?"
+                                              :message "This cannot be undone."
+                                              :confirm-label "delete"
+                                              :cancel-label "cancel"}))
+             ""
+             (help/view [{:key "↑/↓"
+                          :label "navigate"}
+                         {:key "enter"
+                          :label "select"}
+                         {:key "esc"
+                          :label "cancel"}]))
            (first @frames)))))
 
 (deftest test-run-eof-terminates
