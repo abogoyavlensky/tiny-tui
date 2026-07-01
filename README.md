@@ -85,12 +85,12 @@ Namespaces: `core` (run/select/confirm), `list` and `confirm` (widgets),
 ## Examples
 
 ```bash
-LG_SOURCE_PATHS=src lg examples/hello_screen.lg    # enter/leave the terminal
-LG_SOURCE_PATHS=src lg examples/static_screen.lg   # styled static screen
-LG_SOURCE_PATHS=src lg examples/counter.lg         # interactive counter
-LG_SOURCE_PATHS=src lg examples/select_project.lg  # tui/select
-LG_SOURCE_PATHS=src lg examples/confirm_delete.lg  # tui/confirm
-LG_SOURCE_PATHS=src lg examples/deps_actions.lg    # actions + confirmation
+lgx run examples/hello_screen.lg    # enter/leave the terminal
+lgx run examples/static_screen.lg   # styled static screen
+lgx run examples/counter.lg         # interactive counter
+lgx run examples/select_project.lg  # tui/select
+lgx run examples/confirm_delete.lg  # tui/confirm
+lgx run examples/deps_actions.lg    # actions + confirmation
 ```
 
 ## Development
