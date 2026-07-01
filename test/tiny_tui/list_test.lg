@@ -63,6 +63,17 @@
     (is (= (string/join "\n" [(str "› " (style/inverse "a")) "  b"])
            (tlist/view l)))))
 
+(deftest test-falsey-items-are-selectable
+  (let [l (tlist/create {:items [false nil true]})]
+    (is (= {:type :select
+            :item false
+            :index 0}
+           (second (tlist/update l :enter))))
+    (is (= {:type :select
+            :item nil
+            :index 1}
+           (second (tlist/update (first (tlist/update l :down)) :enter))))))
+
 (deftest test-empty-list
   (let [l (tlist/create {:items []})]
     (is (= "No items." (tlist/view l)))

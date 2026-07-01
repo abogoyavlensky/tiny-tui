@@ -24,7 +24,10 @@
                 ["[3~" :delete]
                 ["[5~" :pageup]
                 ["[6~" :pagedown]])
+          ;; Enter arrives as CR in raw mode; LF shows up when input passed
+          ;; through a cooked-mode tty (ICRNL) or a plain pipe. Map both.
           [[(str (char 13)) :enter]
+           [(str (char 10)) :enter]
            [(str (char 9)) :tab]
            [(str (char 127)) :backspace]
            [ESC :esc]

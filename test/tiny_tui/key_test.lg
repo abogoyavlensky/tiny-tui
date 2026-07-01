@@ -21,6 +21,7 @@
 
 (deftest test-parse-named-keys
   (is (= :enter (key/parse (str (char 13)))))
+  (is (= :enter (key/parse (str (char 10)))))
   (is (= :tab (key/parse (str (char 9)))))
   (is (= :backspace (key/parse (str (char 127)))))
   (is (= :esc (key/parse ESC))))

@@ -28,9 +28,11 @@
       (assoc l :cursor (min (dec n) (max 0 (+ (:cursor l) delta)))))))
 
 (defn- select-event [l]
-  (when-let [item (selected-item l)]
+  ;; Keyed off list non-emptiness, not item truthiness — nil/false are
+  ;; legitimate items.
+  (when (seq (:items l))
     {:type :select
-     :item item
+     :item (selected-item l)
      :index (:cursor l)}))
 
 (defn update
