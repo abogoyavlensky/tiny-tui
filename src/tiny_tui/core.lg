@@ -50,14 +50,6 @@
     (screen/with-screen
       (run-loop opts))))
 
-(def ^:private select-bindings
-  [{:key "↑/↓"
-    :label "navigate"}
-   {:key "enter"
-    :label "select"}
-   {:key "q"
-    :label "quit"}])
-
 (defn- select-view [opts list-state]
   (apply layout/vstack
          (concat
@@ -65,7 +57,7 @@
              [(style/bold (:title opts)) ""])
            [(tlist/view list-state)
             ""
-            (help/view select-bindings)])))
+            (help/view (tlist/bindings list-state))])))
 
 (defn select
   "Show a navigable list and return the user's choice:

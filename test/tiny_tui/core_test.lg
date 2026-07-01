@@ -129,6 +129,35 @@
                           :label "quit"}]))
            (first @frames)))))
 
+(def delete-action
+  {:id :delete
+   :key "d"
+   :label "delete"
+   :destructive? true})
+
+(deftest test-select-action-event
+  (is (= {:type :action
+          :action :delete
+          :item {:name "tiny-cli"}
+          :index 0
+          :destructive? true}
+         (tui/select (assoc (select-opts ["d"] (atom []))
+                            :actions [delete-action])))))
+
+(deftest test-select-frame-includes-action-help
+  (let [frames (atom [])
+        opts {:items projects
+              :item->text :name
+              :actions [delete-action]}]
+    (tui/select (merge (select-opts ["q"] frames) opts))
+    (is (= (layout/vstack
+             (style/bold "Choose project")
+             ""
+             (tlist/view (tlist/create opts))
+             ""
+             (help/view (tlist/bindings (tlist/create opts))))
+           (first @frames)))))
+
 (deftest test-run-eof-terminates
   (let [app {:init {:a 1}
              :update (fn [state _] [state nil])

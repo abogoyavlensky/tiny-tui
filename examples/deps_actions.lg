@@ -1,0 +1,26 @@
+;; Stage 5 demo: a list with custom item actions.
+;;
+;; Run from the repo root: LG_SOURCE_PATHS=src lg examples/deps_actions.lg
+
+(ns examples.deps-actions
+  (:require [tiny-tui.core :as tui]))
+
+(def deps
+  [{:name "org.clojure/data.json" :version "2.5.1"}
+   {:name "lambdaisland/uri" :version "1.19.155"}
+   {:name "nooga/let-go-async" :version "git/tag v0.1.0"}])
+
+(defn -main []
+  (let [result (tui/select
+                {:title "Dependencies"
+                 :items deps
+                 :item->text (fn [d] (str (:name d) "  " (:version d)))
+                 :actions [{:id :open :key "o" :label "open"}
+                           {:id :delete :key "d" :label "delete"
+                            :destructive? true}]})]
+    (case (:type result)
+      :select (println "Selected:" (:name (:item result)))
+      :action (println "Action:" (:action result) "on" (:name (:item result)))
+      :cancel (println "Cancelled."))))
+
+(when-not *compiling-aot* (-main))

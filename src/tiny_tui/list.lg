@@ -6,11 +6,14 @@
             [tiny-tui.style :as style]))
 
 (defn create
-  "opts: {:items [...] :item->text fn :empty-text \"...\"}"
+  "opts: {:items [...] :item->text fn :empty-text \"...\"
+          :actions [{:id :delete :key \"d\" :label \"delete\"
+                     :destructive? true} ...]}"
   [opts]
   {:items (vec (:items opts))
    :item->text (or (:item->text opts) str)
    :empty-text (or (:empty-text opts) "No items.")
+   :actions (vec (:actions opts))
    :cursor 0})
 
 (defn selected-index [l]
@@ -35,16 +38,45 @@
      :item (selected-item l)
      :index (:cursor l)}))
 
+(defn- action-event [l action]
+  (when (seq (:items l))
+    (let [event {:type :action
+                 :action (:id action)
+                 :item (selected-item l)
+                 :index (:cursor l)}]
+      (if (:destructive? action)
+        (assoc event :destructive? true)
+        event))))
+
+(defn- action-for-key [l msg]
+  (first (filter (fn [a] (= msg (:key a))) (:actions l))))
+
 (defn update
   "Returns [new-state event]. Events: {:type :select ...} on enter,
-   {:type :cancel} on q/esc, nil otherwise."
+   {:type :action ...} on an action key, {:type :cancel} on q/esc,
+   nil otherwise. Built-in keys win over action keys."
   [l msg]
   (cond
     (= msg :up) [(move l -1) nil]
     (= msg :down) [(move l 1) nil]
     (= msg :enter) [l (select-event l)]
     (or (= msg "q") (= msg :esc)) [l {:type :cancel}]
-    :else [l nil]))
+    :else (if-let [action (action-for-key l msg)]
+            [l (action-event l action)]
+            [l nil])))
+
+(defn bindings
+  "Help-line entries (see tiny-tui.help/view) for this list's keys:
+   navigation, enter, one per action, quit."
+  [l]
+  (vec (concat [{:key "↑/↓"
+                 :label "navigate"}
+                {:key "enter"
+                 :label "select"}]
+               (map (fn [a] {:key (:key a)
+                             :label (:label a)}) (:actions l))
+               [{:key "q"
+                 :label "quit"}])))
 
 (defn view [l]
   (if (empty? (:items l))

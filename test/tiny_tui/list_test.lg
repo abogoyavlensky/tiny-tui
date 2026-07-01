@@ -74,6 +74,65 @@
             :index 1}
            (second (tlist/update (first (tlist/update l :down)) :enter))))))
 
+(def actions
+  [{:id :open
+    :key "o"
+    :label "open"}
+   {:id :delete
+    :key "d"
+    :label "delete"
+    :destructive? true}])
+
+(defn make-with-actions []
+  (tlist/create {:items projects
+                 :item->text :name
+                 :actions actions}))
+
+(deftest test-action-key-returns-action-event
+  (let [l (first (tlist/update (make-with-actions) :down))]
+    (is (= {:type :action
+            :action :delete
+            :item {:name "tiny-tui"}
+            :index 1
+            :destructive? true}
+           (second (tlist/update l "d"))))))
+
+(deftest test-non-destructive-action
+  (is (= {:type :action
+          :action :open
+          :item {:name "tiny-cli"}
+          :index 0}
+         (second (tlist/update (make-with-actions) "o")))))
+
+(deftest test-action-on-empty-list-ignored
+  (let [l (tlist/create {:items []
+                         :actions actions})]
+    (is (nil? (second (tlist/update l "d"))))))
+
+(deftest test-quit-still-cancels-with-actions
+  (is (= {:type :cancel}
+         (second (tlist/update (make-with-actions) "q")))))
+
+(deftest test-bindings
+  (is (= [{:key "↑/↓"
+           :label "navigate"}
+          {:key "enter"
+           :label "select"}
+          {:key "o"
+           :label "open"}
+          {:key "d"
+           :label "delete"}
+          {:key "q"
+           :label "quit"}]
+         (tlist/bindings (make-with-actions))))
+  (is (= [{:key "↑/↓"
+           :label "navigate"}
+          {:key "enter"
+           :label "select"}
+          {:key "q"
+           :label "quit"}]
+         (tlist/bindings (make)))))
+
 (deftest test-empty-list
   (let [l (tlist/create {:items []})]
     (is (= "No items." (tlist/view l)))
