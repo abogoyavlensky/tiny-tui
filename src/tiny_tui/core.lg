@@ -15,6 +15,7 @@
 
 (ns tiny-tui.core
   (:require [term]
+            [tiny-tui.confirm :as tconfirm]
             [tiny-tui.help :as help]
             [tiny-tui.key :as key]
             [tiny-tui.layout :as layout]
@@ -61,10 +62,12 @@
 
 (defn select
   "Show a navigable list and return the user's choice:
-     {:type :select :item item :index n}  on enter
-     {:type :cancel}                      on q / esc / Ctrl-C
-   opts: :title, :items, :item->text (see tiny-tui.list/create), plus the
-   run testing hooks (:read-key-fn :render-fn :screen)."
+     {:type :select :item item :index n}                on enter
+     {:type :action :action id :item item :index n
+      :destructive? true (when set)}                    on an action key
+     {:type :cancel}                                    on q / esc / Ctrl-C
+   opts: :title, :items, :item->text, :actions (see tiny-tui.list/create),
+   plus the run testing hooks (:read-key-fn :render-fn :screen)."
   [opts]
   (let [result (run {:init {:list (tlist/create opts)}
                      :update (fn [state msg]
@@ -78,3 +81,34 @@
     (if (map? event)
       event
       {:type :cancel})))
+
+(def ^:private confirm-bindings
+  [{:key "↑/↓"
+    :label "navigate"}
+   {:key "enter"
+    :label "select"}
+   {:key "esc"
+    :label "cancel"}])
+
+(defn confirm
+  "Ask a yes/no question and return a plain boolean. Cancelling (esc, q,
+   Ctrl-C, end of input) returns false.
+   opts: :title, :message, :confirm-label, :cancel-label (see
+   tiny-tui.confirm/create), plus the run testing hooks."
+  [opts]
+  (let [result (run {:init {:confirm (tconfirm/create opts)}
+                     :update (fn [state msg]
+                               (let [r (tconfirm/update (:confirm state) msg)]
+                                 [(assoc state :confirm (first r)) (second r)]))
+                     :view (fn [state]
+                             (layout/vstack
+                               (tconfirm/view (:confirm state))
+                               ""
+                               (help/view confirm-bindings)))
+                     :read-key-fn (:read-key-fn opts)
+                     :render-fn (:render-fn opts)
+                     :screen (:screen opts)})
+        event (second result)]
+    (if (map? event)
+      (boolean (:value event))
+      false)))

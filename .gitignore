@@ -10,3 +10,4 @@ lsp/
 .calva
 .env
 .clj-pulse
+.tmp/
