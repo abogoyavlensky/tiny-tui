@@ -399,3 +399,33 @@
         [state event] (tui/run app)]
     (is (= 1 (:a state)))
     (is (nil? event))))
+
+(def ms-items [{:name "a"} {:name "b"} {:name "c"}])
+
+(defn ms-opts [script extra]
+  (merge {:title "Pick"
+          :items ms-items
+          :item->text :name
+          :read-key-fn (scripted script)
+          :render-fn (fn [_] nil)
+          :screen false}
+         extra))
+
+(deftest test-multi-select-returns-chosen-items
+  ;; toggle row 0, down, toggle row 1, submit -> [a b] in index order
+  (is (= [{:name "a"} {:name "b"}]
+         (tui/multi-select (ms-opts [" " :down " " :enter] {})))))
+
+(deftest test-multi-select-empty-submit-returns-empty-vector
+  (is (= [] (tui/multi-select (ms-opts [:enter] {})))))
+
+(deftest test-multi-select-cancel-returns-nil
+  (is (nil? (tui/multi-select (ms-opts [:esc] {}))))
+  (is (nil? (tui/multi-select (ms-opts [:ctrl-c] {})))))
+
+(deftest test-select-multi-emits-submit-event
+  ;; the underlying event shape via tui/select with :multi? true
+  (is (= {:type :submit
+          :items [{:name "a"}]
+          :indices [0]}
+         (tui/select (ms-opts [" " :enter] {:multi? true})))))

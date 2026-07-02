@@ -185,7 +185,9 @@
    see run), plus the run testing hooks (:read-key-fn :render-fn :screen).
    With :filterable? the user types to narrow the list; letter keys type
    into the query, so bind actions to control keys (e.g. :key :ctrl-d) for
-   them to fire while filtering — plain-letter actions are shadowed."
+   them to fire while filtering — plain-letter actions are shadowed.
+   With :multi? space toggles a checkbox on the current row and enter returns
+   {:type :submit :items [...] :indices [...]} (see tui/multi-select)."
   [opts]
   (let [result (run {:init {:mode :list
                             :list (tlist/create opts)}
@@ -199,6 +201,17 @@
     (if (map? event)
       event
       {:type :cancel})))
+
+(defn multi-select
+  "Show a checkbox list (space toggles, enter submits) and return the vector
+   of chosen items in list order — nil on cancel (esc/Ctrl-C/end of input),
+   or [] on an empty submit. Takes the same opts as select (including
+   :filterable?, which composes)."
+  [opts]
+  (let [result (select (assoc opts :multi? true))]
+    (if (= :submit (:type result))
+      (:items result)
+      nil)))
 
 (defn confirm
   "Ask a yes/no question and return a plain boolean. Cancelling (esc, q,
