@@ -238,3 +238,36 @@
            (:offset (tlist/reconcile-offset l 10)))))
   ;; nil height leaves offset at 0
   (is (= 0 (:offset (tlist/reconcile-offset (make50) nil)))))
+
+(defn make5 []
+  (tlist/create {:items ["a" "b" "c" "d" "e"]}))
+
+(deftest test-view-windowed-top
+  ;; h 3 -> body 2 + indicator; cursor 0 shows items 0,1 and a dim "1/5"
+  (is (= (string/join "\n"
+                      [(str "› " (style/inverse "a"))
+                       "  b"
+                       (style/dim "1/5")])
+         (tlist/view (make5) {:height 3}))))
+
+(deftest test-view-windowed-scrolled
+  ;; cursor at the bottom, offset reconciled the way core does it
+  (let [l (tlist/reconcile-offset (assoc (make5) :cursor 4) 3)]
+    (is (= (string/join "\n"
+                        ["  d"
+                         (str "› " (style/inverse "e"))
+                         (style/dim "5/5")])
+           (tlist/view l {:height 3})))))
+
+(deftest test-view-height-fits-no-indicator
+  ;; height large enough for all items -> identical to the no-height render
+  (is (= (tlist/view (make5))
+         (tlist/view (make5) {:height 10}))))
+
+(deftest test-view-height-one-single-item-no-indicator
+  (is (= (str "› " (style/inverse "a"))
+         (tlist/view (make5) {:height 1}))))
+
+(deftest test-view-empty-with-height
+  (is (= "No items."
+         (tlist/view (tlist/create {:items []}) {:height 5}))))

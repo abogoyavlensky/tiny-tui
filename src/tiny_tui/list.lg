@@ -129,7 +129,10 @@
 
 (defn view
   "Render the list. view-opts may carry :width — the column budget; item
-   text is truncated with a trailing ellipsis to fit."
+   text is truncated with a trailing ellipsis to fit — and :height — the
+   number of rows for the whole list block. When the list is taller than
+   :height it scrolls to a window around the cursor (see window) and a dim
+   \"cursor/total\" indicator is shown on the last row."
   ([l] (view l {}))
   ([l view-opts]
    (if (empty? (:items l))
@@ -137,12 +140,19 @@
      (let [marker (:cursor-marker l)
            marker-w (style/visible-width marker)
            blank (apply str (repeat marker-w " "))
-           max-w (when-let [w (:width view-opts)] (- w marker-w))]
-       (string/join "\n"
-                    (map-indexed
-                      (fn [i item]
-                        (let [text (truncate ((:item->text l) item) max-w)]
-                          (if (= i (:cursor l))
-                            (str marker ((:selected-style l) text))
-                            (str blank text))))
-                      (:items l)))))))
+           max-w (when-let [w (:width view-opts)] (- w marker-w))
+           win (window l (:height view-opts))
+           start (:start win)
+           visible-items (take (- (:end win) start) (drop start (:items l)))
+           rows (map-indexed
+                  (fn [local item]
+                    (let [i (+ start local)
+                          text (truncate ((:item->text l) item) max-w)]
+                      (if (= i (:cursor l))
+                        (str marker ((:selected-style l) text))
+                        (str blank text))))
+                  visible-items)
+           rows (if (:indicator win)
+                  (concat rows [(style/dim (:indicator win))])
+                  rows)]
+       (string/join "\n" rows)))))
