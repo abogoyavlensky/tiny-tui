@@ -1,0 +1,21 @@
+name: checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [ master ]
+  workflow_call:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: jdx/mise-action@v3
+
+      - name: Run fmt
+        run: lgx fmt check
+
+      - name: Run tests
+        run: lgx test

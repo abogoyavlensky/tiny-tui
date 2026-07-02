@@ -1,5 +1,21 @@
 {:paths ["src"]
  :main "main.lg"
  :deps {}
- :tasks {fmt {:doc "Format source files"
-              :do [{:sh "cljfmt fix"}]}}}
+ :tasks {fmt {:doc "Format source files (available actions: fix, check; default: fix)"
+              :args [{:name :action
+                      :type [:enum "fix" "check"]
+                      :default "fix"}]
+              :do [{:sh "cljfmt {{action}}"}]}
+
+         lint {:doc "Lint source files"
+               :do [{:sh "find src test -type f -name '*.lg' -print0 | xargs -0 clj-kondo --lint"}]}
+
+         check {:doc "Run all checks"
+                 :do [{:sh "lgx fmt"}
+                      {:sh "lgx lint"} 
+                      {:sh "lgx test"}]}
+
+         release {:doc "Release a new version as a git tag (pass only numbers without a prefix)"
+                  :args [{:name :version}]
+                  :do [{:sh ["git" "tag" "v{{version}}"]}
+                       {:sh "git push --tags"}]}}}
