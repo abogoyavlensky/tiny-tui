@@ -11,3 +11,4 @@ lsp/
 .env
 .clj-pulse
 .tmp/
+.clj-kondo/.cache/
