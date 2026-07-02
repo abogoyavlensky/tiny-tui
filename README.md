@@ -35,6 +35,8 @@ as shown below.
     :cancel nil))
 ```
 
+![Select Project example](./docs/images/select_project.png)
+
 `select` runs until the user picks an item or cancels, then returns an event
 map. Long lists scroll on their own. Turn on `:filterable?` to type-to-filter,
 `:multi?` for checkboxes, or `:on-action` to act without leaving the list. All
@@ -56,6 +58,8 @@ Options:
 - `:items` - the collection to show.
 - `:item->text` - `(fn [item] string)` rendering each row (default `str`).
 - `:title` - a bold heading above the list.
+- `:cursor-item` - start the cursor on the row equal to this item (else the
+  top); handy for re-entering focused on a just-added item.
 - `:actions` - per-item commands (see [Actions](#actions)).
 - `:filterable?` - let the user type to narrow the list, matching a
   case-insensitive substring of the row text.
@@ -89,6 +93,9 @@ An action is a command the user runs on the highlighted item. List them in
 - `:destructive?` or `:confirm?` - open a yes/no confirmation first.
 - `:confirm-title`, `:confirm-message` - the confirmation text; the message
   may be a `(fn [item] string)`.
+- `:returns?` - even under `:on-action`, return this action's event (exit
+  `select`) instead of handling it in place — for work that must happen
+  outside the loop, e.g. prompt for input, create something, then re-enter.
 
 ```clojure
 (tui/select

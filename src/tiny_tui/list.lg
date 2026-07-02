@@ -30,7 +30,13 @@
      ;; query (and for non-filterable lists, which never touch it), so every
      ;; downstream read is unchanged unless filtering is actually in use.
      :filtered (vec (range (count items)))
-     :cursor 0
+     ;; Start on :cursor-item's row when given (else the top). At creation the
+     ;; query is empty, so :filtered is the identity and the item index is the
+     ;; cursor index; window auto-scrolls to it on first render.
+     :cursor (or (when-let [ci (:cursor-item opts)]
+                   (some (fn [i] (when (= (nth items i) ci) i))
+                         (range (count items))))
+                 0)
      :offset 0}))
 
 (defn- matches? [l query item]

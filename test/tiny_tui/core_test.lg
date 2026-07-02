@@ -99,6 +99,55 @@
   ;; EOF also cancels
   (is (= {:type :cancel} (tui/select (select-opts [] (atom []))))))
 
+(defn string-opts [opts]
+  (merge {:items ["a" "b" "c"]
+          :item->text identity
+          :render-fn (fn [_] nil)
+          :screen false}
+         opts))
+
+(deftest test-select-cursor-item
+  (testing ":cursor-item starts the cursor on that row"
+    (is (= {:type :select
+            :item "c"
+            :index 2}
+           (tui/select (string-opts {:cursor-item "c"
+                                     :read-key-fn (scripted [:enter])})))))
+  (testing "an unknown :cursor-item falls back to the top"
+    (is (= {:type :select
+            :item "a"
+            :index 0}
+           (tui/select (string-opts {:cursor-item "z"
+                                     :read-key-fn (scripted [:enter])})))))
+  (testing "no :cursor-item starts at the top"
+    (is (= {:type :select
+            :item "a"
+            :index 0}
+           (tui/select (string-opts {:read-key-fn (scripted [:enter])}))))))
+
+(deftest test-select-returns-action
+  (testing "a :returns? action exits select with its event even when :on-action is set"
+    (is (= {:type :action
+            :action :new
+            :item "a"
+            :index 0}
+           (tui/select (string-opts
+                         {:actions [{:id :new
+                                     :key "c"
+                                     :label "create"
+                                     :returns? true}]
+                          :on-action (fn [_] {:status "should not run"})
+                          :read-key-fn (scripted ["c"])})))))
+  (testing "without :returns?, :on-action handles the action and keeps looping"
+    (let [ran (atom false)]
+      (tui/select (string-opts
+                    {:actions [{:id :new
+                                :key "c"
+                                :label "create"}]
+                     :on-action (fn [_] (reset! ran true) {:status "x"})
+                     :read-key-fn (scripted ["c"])}))
+      (is (= true @ran)))))
+
 (defn filter-opts [script frames extra]
   (merge {:title "Projects"
           :items projects

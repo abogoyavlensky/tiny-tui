@@ -162,6 +162,10 @@
                   :confirm (confirm-for-action action event)
                   :pending-action event)
            nil]
+          ;; A :returns? action exits select with its event even when
+          ;; :on-action is set — for actions that must run outside the loop
+          ;; (e.g. prompt for input, then re-enter).
+          (and action (:returns? action)) [state event]
           (= :action (:type event)) (apply-on-action opts state event)
           :else [state event])))))
 
@@ -180,9 +184,15 @@
    the list in place (cursor and filter preserved), its :status shows until
    the next keypress, and the loop continues. Enter and cancel still exit.
    The handler is the caller's code (it may be impure); the widgets stay pure.
-   opts: :title, :items, :item->text, :actions, :filterable?, :filter-fn
-   (see tiny-tui.list/create), :inline? (render in place, erasing on exit —
-   see run), plus the run testing hooks (:read-key-fn :render-fn :screen).
+   An action with :returns? true is exempt: even under :on-action it returns
+   its event (exits select), for work that must happen outside the loop —
+   prompt for input, create something, then re-enter.
+   :cursor-item starts the cursor on the row equal to it (else the top) —
+   handy for re-entering focused on a just-added item.
+   opts: :title, :items, :item->text, :actions, :cursor-item, :filterable?,
+   :filter-fn (see tiny-tui.list/create), :inline? (render in place, erasing
+   on exit — see run), plus the run testing hooks (:read-key-fn :render-fn
+   :screen).
    With :filterable? the user types to narrow the list; letter keys type
    into the query, so bind actions to control keys (e.g. :key :ctrl-d) for
    them to fire while filtering — plain-letter actions are shadowed.
