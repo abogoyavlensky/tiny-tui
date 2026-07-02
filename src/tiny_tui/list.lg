@@ -22,6 +22,9 @@
      :selected-style (or (:selected-style opts) style/inverse)
      :filterable? (boolean (:filterable? opts))
      :filter-fn (:filter-fn opts)
+     :multi? (boolean (:multi? opts))
+     ;; Original indices of checked rows (stable across filtering).
+     :selected #{}
      :query ""
      ;; Indices into :items currently matching :query. Identity for an empty
      ;; query (and for non-filterable lists, which never touch it), so every
@@ -59,7 +62,8 @@
                               (range (count items))))
         n (count filtered)
         cursor (if (zero? n) 0 (min (:cursor l) (dec n)))]
-    (assoc base :filtered filtered :cursor cursor :offset 0)))
+    ;; :selected holds indices into the old items, so clear it on replacement.
+    (assoc base :filtered filtered :cursor cursor :offset 0 :selected #{})))
 
 ;; The cursor indexes into :filtered (positions in the current match set);
 ;; :filtered maps back to the original :items index, so a select event's
@@ -98,6 +102,21 @@
         (assoc event :destructive? true)
         event))))
 
+(defn- toggle [l]
+  ;; Flip the highlighted row's original index in the :selected set.
+  (let [idx (selected-index l)]
+    (if (nil? idx)
+      l
+      (assoc l :selected (if (contains? (:selected l) idx)
+                           (disj (:selected l) idx)
+                           (conj (:selected l) idx))))))
+
+(defn- submit-event [l]
+  (let [idxs (sort (:selected l))]
+    {:type :submit
+     :items (vec (map (fn [i] (nth (:items l) i)) idxs))
+     :indices (vec idxs)}))
+
 (defn- action-for-key [l msg]
   (first (filter (fn [a] (= msg (:key a))) (:actions l))))
 
@@ -115,11 +134,13 @@
   [l msg]
   (if (:filterable? l)
     (cond
+      ;; When multi-select, space toggles the checkbox before it would type.
+      (and (:multi? l) (= msg " ")) [(toggle l) nil]
       (string? msg) [(refilter (assoc l :query (str (:query l) msg))) nil]
       (= msg :backspace) [(refilter (assoc l :query (drop-last-char (:query l)))) nil]
       (= msg :up) [(move l -1) nil]
       (= msg :down) [(move l 1) nil]
-      (= msg :enter) [l (select-event l)]
+      (= msg :enter) [l (if (:multi? l) (submit-event l) (select-event l))]
       (= msg :esc) [l {:type :cancel}]
       ;; Non-printable keys (e.g. :ctrl-d) can't be typed, so they may still
       ;; trigger actions while filtering; plain letters are already consumed
@@ -128,9 +149,10 @@
               [l (action-event l action)]
               [l nil]))
     (cond
+      (and (:multi? l) (= msg " ")) [(toggle l) nil]
       (= msg :up) [(move l -1) nil]
       (= msg :down) [(move l 1) nil]
-      (= msg :enter) [l (select-event l)]
+      (= msg :enter) [l (if (:multi? l) (submit-event l) (select-event l))]
       (or (= msg "q") (= msg :esc)) [l {:type :cancel}]
       :else (if-let [action (action-for-key l msg)]
               [l (action-event l action)]

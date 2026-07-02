@@ -551,3 +551,63 @@
     (is (= [] (:filtered l')))
     (is (= 0 (:cursor l')))
     (is (nil? (tlist/selected-item l')))))
+
+(defn make-multi [extra]
+  (tlist/create (merge {:items ["a" "b" "c" "d"]
+                        :multi? true} extra)))
+
+(deftest test-create-multi-defaults
+  (let [l (make-multi {})]
+    (is (= true (:multi? l)))
+    (is (= #{} (:selected l)))))
+
+(deftest test-space-toggles-current
+  (let [l (make-multi {})
+        on (first (tlist/update l " "))]
+    (is (= #{0} (:selected on)))
+    ;; toggling again removes it
+    (is (= #{} (:selected (first (tlist/update on " ")))))
+    ;; space emits no event
+    (is (nil? (second (tlist/update l " "))))))
+
+(deftest test-toggle-then-navigate-then-toggle
+  (let [l (make-multi {})
+        l (first (tlist/update l " "))          ; select 0
+        l (first (tlist/update l :down))        ; cursor -> 1
+        l (first (tlist/update l :down))        ; cursor -> 2
+        l (first (tlist/update l " "))]         ; select 2
+    (is (= #{0 2} (:selected l)))))
+
+(deftest test-selection-stable-across-filtering
+  ;; multi + filterable: toggle a row, then narrow; the original index persists
+  (let [l (tlist/create {:items fruits
+                         :multi? true
+                         :filterable? true})
+        l (first (tlist/update l :down))        ; cursor -> banana (index 1)
+        l (first (tlist/update l " "))          ; select banana (orig index 1)
+        l (type-in l ["r" "r"])]                ; narrow to Cherry(2)/Blueberry(4)
+    (is (contains? (:selected l) 1))))
+
+(deftest test-enter-submits-selected-in-order
+  ;; toggle index 2 then index 0 -> submit lists them index-ordered
+  (let [l (make-multi {})
+        l (first (tlist/update (first (tlist/update l :down)) :down)) ; cursor -> 2
+        l (first (tlist/update l " "))          ; select 2
+        l (first (tlist/update (first (tlist/update l :up)) :up))     ; cursor -> 0
+        l (first (tlist/update l " "))]         ; select 0
+    (is (= {:type :submit
+            :items ["a" "c"]
+            :indices [0 2]}
+           (second (tlist/update l :enter))))))
+
+(deftest test-enter-submits-empty-set
+  (is (= {:type :submit
+          :items []
+          :indices []}
+         (second (tlist/update (make-multi {}) :enter)))))
+
+(deftest test-set-items-clears-selection
+  ;; replacing items invalidates :selected indices, so it resets
+  (let [l (first (tlist/update (make-multi {}) " "))]  ; select index 0
+    (is (= #{0} (:selected l)))
+    (is (= #{} (:selected (tlist/set-items l ["x" "y"]))))))
