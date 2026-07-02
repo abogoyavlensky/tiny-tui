@@ -253,6 +253,29 @@
                           :label "cancel"}]))
            (first @frames)))))
 
+(defn input-opts [script frames extra]
+  (merge {:title "Your name"
+          :read-key-fn (scripted script)
+          :render-fn (fn [s] (swap! frames conj s))
+          :screen false}
+         extra))
+
+(deftest test-input-submits-typed-text
+  (is (= "hi" (tui/input (input-opts ["h" "i" :enter] (atom []) {})))))
+
+(deftest test-input-cancel-returns-nil
+  (is (nil? (tui/input (input-opts [:esc] (atom []) {}))))
+  (is (nil? (tui/input (input-opts [:ctrl-c] (atom []) {}))))
+  ;; EOF also cancels
+  (is (nil? (tui/input (input-opts [] (atom []) {})))))
+
+(deftest test-input-validate-blocks-then-submits
+  ;; enter on empty is rejected by :validate; typing then enter submits
+  (let [validate (fn [t] (when (empty? t) "required"))]
+    (is (= "x" (tui/input (input-opts [:enter "x" :enter]
+                                      (atom [])
+                                      {:validate validate}))))))
+
 (deftest test-run-eof-terminates
   (let [app {:init {:a 1}
              :update (fn [state _] [state nil])
