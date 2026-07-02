@@ -1,0 +1,23 @@
+;; Filterable demo: type to narrow a long list, arrows navigate the matches,
+;; enter selects. With :filterable? true the query owns the keyboard, so
+;; letter keys (including "q") type into the filter — only esc cancels.
+;;
+;; Run from the repo root: lgx run examples/filter_select.lg
+
+(ns examples.filter-select
+  (:require [tiny-tui.core :as tui]))
+
+(def branches
+  (vec (map (fn [i] {:id i :name (str "branch-" i)}) (range 1 51))))
+
+(defn -main []
+  (let [result (tui/select {:title "Checkout branch (type to filter)"
+                            :items branches
+                            :item->text :name
+                            :actions [{:id :delete :key :ctrl-d :label "delete" :destructive? true}]
+                            :filterable? true})]
+    (case (:type result)
+      :select (println "Checked out:" (:name (:item result)))
+      :cancel (println "Cancelled."))))
+
+(when-not *compiling-aot* (-main))

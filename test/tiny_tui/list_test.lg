@@ -271,3 +271,254 @@
 (deftest test-view-empty-with-height
   (is (= "No items."
          (tlist/view (tlist/create {:items []}) {:height 5}))))
+
+(def fruits ["Apple" "banana" "Cherry" "apricot" "Blueberry"])
+
+(defn make-filterable [extra]
+  (tlist/create (merge {:items fruits
+                        :filterable? true} extra)))
+
+(deftest test-create-filterable-defaults
+  (let [l (make-filterable {})]
+    (is (= true (:filterable? l)))
+    (is (= "" (:query l)))
+    (is (= [0 1 2 3 4] (:filtered l)))))
+
+(deftest test-create-non-filterable-has-identity-filtered
+  (let [l (tlist/create {:items fruits})]
+    (is (= [0 1 2 3 4] (:filtered l)))))
+
+(deftest test-refilter-substring-case-insensitive
+  ;; "ap" matches "Apple" (0) and "apricot" (3)
+  (let [l (tlist/refilter (assoc (make-filterable {}) :query "ap"))]
+    (is (= [0 3] (:filtered l))))
+  ;; "rr" matches "Cherry" (2) and "Blueberry" (4)
+  (let [l (tlist/refilter (assoc (make-filterable {}) :query "rr"))]
+    (is (= [2 4] (:filtered l)))))
+
+(deftest test-refilter-resets-cursor-and-offset
+  (let [l (tlist/refilter (assoc (make-filterable {}) :query "b" :cursor 3 :offset 2))]
+    ;; "b" matches banana (1) and Blueberry (4)
+    (is (= [1 4] (:filtered l)))
+    (is (= 0 (:cursor l)))
+    (is (= 0 (:offset l)))))
+
+(deftest test-refilter-empty-query-matches-all
+  (let [l (tlist/refilter (assoc (make-filterable {}) :query ""))]
+    (is (= [0 1 2 3 4] (:filtered l)))))
+
+(deftest test-refilter-custom-filter-fn
+  ;; prefix match instead of substring: "a" starts only "Apple"/"apricot"
+  (let [prefix (fn [q item] (string/starts-with? (string/lower-case item)
+                                                 (string/lower-case q)))
+        l (tlist/refilter (assoc (make-filterable {:filter-fn prefix}) :query "a"))]
+    (is (= [0 3] (:filtered l)))))
+
+(defn type-in [l chars]
+  (reduce (fn [st c] (first (tlist/update st c))) l chars))
+
+(deftest test-typing-narrows
+  (let [l (type-in (make-filterable {}) ["a" "p"])]
+    (is (= "ap" (:query l)))
+    (is (= [0 3] (:filtered l)))))
+
+(deftest test-q-types-not-cancels-when-filterable
+  (let [r (tlist/update (make-filterable {}) "q")]
+    (is (= "q" (:query (first r))))
+    (is (nil? (second r)))))
+
+(deftest test-backspace-widens
+  (let [l (type-in (make-filterable {}) ["a" "p" :backspace])]
+    (is (= "a" (:query l)))
+    ;; "a" (substring) matches Apple(0), banana(1), apricot(3)
+    (is (= [0 1 3] (:filtered l)))))
+
+(deftest test-filterable-enter-selects-original-index
+  ;; narrow to "rr" -> Cherry(2), Blueberry(4); enter picks the first match
+  (let [l (type-in (make-filterable {}) ["r" "r"])
+        event (second (tlist/update l :enter))]
+    (is (= {:type :select
+            :item "Cherry"
+            :index 2} event))))
+
+(deftest test-filterable-down-then-enter
+  ;; "rr" -> [2 4]; down moves to Blueberry(4)
+  (let [l (first (tlist/update (type-in (make-filterable {}) ["r" "r"]) :down))]
+    (is (= "Blueberry" (tlist/selected-item l)))
+    (is (= 4 (tlist/selected-index l)))
+    (is (= {:type :select
+            :item "Blueberry"
+            :index 4}
+           (second (tlist/update l :enter))))))
+
+(deftest test-filterable-esc-cancels
+  (is (= {:type :cancel} (second (tlist/update (make-filterable {}) :esc)))))
+
+(deftest test-filterable-no-match-has-no-selection
+  (let [l (type-in (make-filterable {}) ["z" "z"])]
+    (is (= [] (:filtered l)))
+    (is (nil? (tlist/selected-item l)))
+    (is (nil? (tlist/selected-index l)))
+    (is (nil? (second (tlist/update l :enter))))))
+
+(deftest test-filterable-down-clamps-to-matches
+  ;; "rr" -> 2 matches; repeated down clamps at the last match (index 1 -> Blueberry)
+  (let [l (type-in (make-filterable {}) ["r" "r"])
+        l (first (tlist/update (first (tlist/update l :down)) :down))]
+    (is (= 1 (:cursor l)))
+    (is (= "Blueberry" (tlist/selected-item l)))))
+
+(deftest test-window-counts-filtered
+  ;; window measures the match set, not the original items
+  (let [l (assoc (make-filterable {}) :filtered [2 4] :cursor 0 :offset 0)]
+    (is (= {:start 0
+            :end 2
+            :windowed? false
+            :indicator nil}
+           (tlist/window l 10)))))
+
+(deftest test-view-filterable-shows-query-line
+  (is (= (string/join "\n"
+                      [(str "> " (style/inverse " "))
+                       (str "› " (style/inverse "Apple"))
+                       "  banana"
+                       "  Cherry"
+                       "  apricot"
+                       "  Blueberry"])
+         (tlist/view (make-filterable {})))))
+
+(deftest test-view-filterable-narrowed
+  (let [l (type-in (make-filterable {}) ["r" "r"])]
+    (is (= (string/join "\n"
+                        [(str "> rr" (style/inverse " "))
+                         (str "› " (style/inverse "Cherry"))
+                         "  Blueberry"])
+           (tlist/view l)))))
+
+(deftest test-view-filterable-no-match
+  (let [l (type-in (make-filterable {}) ["z" "z"])]
+    (is (= (string/join "\n"
+                        [(str "> zz" (style/inverse " "))
+                         (style/dim "No matches")])
+           (tlist/view l)))))
+
+(deftest test-view-filterable-windowed-reserves-query-row
+  ;; height 4 -> 1 query row + 2 item rows + indicator; cursor 0
+  (is (= (string/join "\n"
+                      [(str "> " (style/inverse " "))
+                       (str "› " (style/inverse "Apple"))
+                       "  banana"
+                       (style/dim "1/5")])
+         (tlist/view (make-filterable {}) {:height 4}))))
+
+(deftest test-bindings-filterable
+  (is (= [{:key "↑/↓"
+           :label "navigate"}
+          {:key "enter"
+           :label "select"}
+          {:key "esc"
+           :label "cancel"}]
+         (tlist/bindings (make-filterable {})))))
+
+(deftest test-view-filterable-height-one-query-only
+  ;; a single-row block spends its only row on the query line, no items
+  (is (= (str "> " (style/inverse " "))
+         (tlist/view (make-filterable {}) {:height 1}))))
+
+(deftest test-view-filterable-empty-list-uses-empty-text
+  ;; genuinely empty (nothing to filter) -> :empty-text, not "No matches"
+  (let [l (tlist/create {:items []
+                         :filterable? true
+                         :empty-text "Nothing here"})]
+    (is (= "Nothing here" (tlist/view l)))))
+
+(deftest test-view-filterable-height-one-no-match-query-only
+  ;; even with zero matches, a one-row block shows only the query line
+  (let [l (type-in (make-filterable {}) ["z" "z"])]
+    (is (= (str "> zz" (style/inverse " "))
+           (tlist/view l {:height 1})))))
+
+(def ctrl-actions
+  [{:id :delete
+    :key :ctrl-d
+    :label "delete"
+    :destructive? true}])
+
+(deftest test-filterable-ctrl-action-fires-while-typing
+  ;; type to narrow, then a control-key action fires on the highlighted match
+  (let [l (type-in (tlist/create {:items fruits
+                                  :filterable? true
+                                  :actions ctrl-actions})
+                   ["r" "r"])]
+    (is (= {:type :action
+            :action :delete
+            :item "Cherry"
+            :index 2
+            :destructive? true}
+           (second (tlist/update l :ctrl-d))))))
+
+(deftest test-filterable-letter-action-is-shadowed
+  ;; a plain-letter action key still types into the query (does not fire)
+  (let [l (tlist/create {:items fruits
+                         :filterable? true
+                         :actions [{:id :delete
+                                    :key "d"
+                                    :label "delete"}]})
+        r (tlist/update l "d")]
+    (is (= "d" (:query (first r))))
+    (is (nil? (second r)))))
+
+(deftest test-bindings-filterable-shows-ctrl-actions
+  (is (= [{:key "↑/↓"
+           :label "navigate"}
+          {:key "enter"
+           :label "select"}
+          {:key "^d"
+           :label "delete"}
+          {:key "esc"
+           :label "cancel"}]
+         (tlist/bindings (tlist/create {:items fruits
+                                        :filterable? true
+                                        :actions ctrl-actions})))))
+
+(deftest test-bindings-filterable-hides-letter-actions
+  ;; a letter action can't fire while filtering, so it's dropped from help
+  (is (= [{:key "↑/↓"
+           :label "navigate"}
+          {:key "enter"
+           :label "select"}
+          {:key "esc"
+           :label "cancel"}]
+         (tlist/bindings (tlist/create {:items fruits
+                                        :filterable? true
+                                        :actions [{:id :delete
+                                                   :key "d"
+                                                   :label "delete"}]})))))
+
+(deftest test-bindings-formats-ctrl-key-label
+  ;; ^d rendering applies to non-filterable lists too (string keys unchanged)
+  (is (= {:key "^d"
+          :label "delete"}
+         (nth (tlist/bindings (tlist/create {:items fruits
+                                             :actions ctrl-actions})) 2))))
+
+(deftest test-bindings-filterable-hides-reserved-key-actions
+  ;; an action bound to a key the filter loop intercepts (e.g. :enter) never
+  ;; fires, so it must not be advertised
+  (let [l (tlist/create {:items fruits
+                         :filterable? true
+                         :actions [{:id :pick
+                                    :key :enter
+                                    :label "pick"}
+                                   {:id :delete
+                                    :key :ctrl-d
+                                    :label "delete"}]})]
+    (is (= [{:key "↑/↓"
+             :label "navigate"}
+            {:key "enter"
+             :label "select"}
+            {:key "^d"
+             :label "delete"}
+            {:key "esc"
+             :label "cancel"}]
+           (tlist/bindings l)))))

@@ -98,6 +98,39 @@
   ;; EOF also cancels
   (is (= {:type :cancel} (tui/select (select-opts [] (atom []))))))
 
+(defn filter-opts [script frames extra]
+  (merge {:title "Projects"
+          :items projects
+          :item->text :name
+          :filterable? true
+          :read-key-fn (scripted script)
+          :render-fn (fn [s] (swap! frames conj s))
+          :screen false}
+         extra))
+
+(deftest test-select-filterable-narrows-and-selects
+  ;; typing "tui" narrows to tiny-tui; enter selects it with its original index
+  (is (= {:type :select
+          :item {:name "tiny-tui"}
+          :index 1}
+         (tui/select (filter-opts ["t" "u" "i" :enter] (atom []) {})))))
+
+(deftest test-select-filterable-q-types-not-quits
+  ;; "q" narrows to the only item containing it, rather than cancelling
+  (let [items [{:name "alpha"} {:name "sqlite"} {:name "beta"}]]
+    (is (= {:type :select
+            :item {:name "sqlite"}
+            :index 1}
+           (tui/select (filter-opts ["q" :enter] (atom []) {:items items}))))))
+
+(deftest test-select-filterable-custom-filter-fn
+  ;; an exact-match :filter-fn overrides the default substring match
+  (is (= {:type :select
+          :item {:name "lgx"}
+          :index 2}
+         (tui/select (filter-opts ["l" "g" "x" :enter] (atom [])
+                                  {:filter-fn (fn [q item] (= q (:name item)))})))))
+
 (deftest test-select-frame
   (let [frames (atom [])]
     (tui/select (select-opts ["q"] frames))

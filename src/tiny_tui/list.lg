@@ -8,45 +8,78 @@
 (defn create
   "opts: {:items [...] :item->text fn :empty-text \"...\"
           :actions [{:id :delete :key \"d\" :label \"delete\"
-                     :destructive? true} ...]}"
+                     :destructive? true} ...]
+          :filterable? bool :filter-fn (fn [query item] bool)}
+   With :filterable? the user types to narrow the list; :filter-fn overrides
+   the default case-insensitive substring match on the item's text."
   [opts]
-  {:items (vec (:items opts))
-   :item->text (or (:item->text opts) str)
-   :empty-text (or (:empty-text opts) "No items.")
-   :actions (vec (:actions opts))
-   :cursor-marker (or (:cursor-marker opts) "› ")
-   :selected-style (or (:selected-style opts) style/inverse)
-   :cursor 0
-   :offset 0})
+  (let [items (vec (:items opts))]
+    {:items items
+     :item->text (or (:item->text opts) str)
+     :empty-text (or (:empty-text opts) "No items.")
+     :actions (vec (:actions opts))
+     :cursor-marker (or (:cursor-marker opts) "› ")
+     :selected-style (or (:selected-style opts) style/inverse)
+     :filterable? (boolean (:filterable? opts))
+     :filter-fn (:filter-fn opts)
+     :query ""
+     ;; Indices into :items currently matching :query. Identity for an empty
+     ;; query (and for non-filterable lists, which never touch it), so every
+     ;; downstream read is unchanged unless filtering is actually in use.
+     :filtered (vec (range (count items)))
+     :cursor 0
+     :offset 0}))
+
+(defn- matches? [l query item]
+  (cond
+    (empty? query) true
+    (:filter-fn l) ((:filter-fn l) query item)
+    :else (string/includes? (string/lower-case ((:item->text l) item))
+                            (string/lower-case query))))
+
+(defn refilter
+  "Recompute :filtered for the current :query and reset the cursor/offset to
+   the top (fzf-style: a new query starts at the first match)."
+  [l]
+  (let [items (:items l)
+        query (:query l)
+        idxs (filter (fn [i] (matches? l query (nth items i)))
+                     (range (count items)))]
+    (assoc l :filtered (vec idxs) :cursor 0 :offset 0)))
+
+;; The cursor indexes into :filtered (positions in the current match set);
+;; :filtered maps back to the original :items index, so a select event's
+;; :index stays stable regardless of the query. For non-filterable lists
+;; :filtered is the identity vector, so these read exactly as before.
 
 (defn selected-index [l]
-  (when (seq (:items l))
-    (:cursor l)))
+  (when (seq (:filtered l))
+    (nth (:filtered l) (:cursor l))))
 
 (defn selected-item [l]
-  (when (seq (:items l))
-    (nth (:items l) (:cursor l))))
+  (when (seq (:filtered l))
+    (nth (:items l) (selected-index l))))
 
 (defn- move [l delta]
-  (let [n (count (:items l))]
+  (let [n (count (:filtered l))]
     (if (zero? n)
       l
       (assoc l :cursor (min (dec n) (max 0 (+ (:cursor l) delta)))))))
 
 (defn- select-event [l]
-  ;; Keyed off list non-emptiness, not item truthiness — nil/false are
+  ;; Keyed off match non-emptiness, not item truthiness — nil/false are
   ;; legitimate items.
-  (when (seq (:items l))
+  (when (seq (:filtered l))
     {:type :select
      :item (selected-item l)
-     :index (:cursor l)}))
+     :index (selected-index l)}))
 
 (defn- action-event [l action]
-  (when (seq (:items l))
+  (when (seq (:filtered l))
     (let [event {:type :action
                  :action (:id action)
                  :item (selected-item l)
-                 :index (:cursor l)}]
+                 :index (selected-index l)}]
       (if (:destructive? action)
         (assoc event :destructive? true)
         event))))
@@ -54,32 +87,84 @@
 (defn- action-for-key [l msg]
   (first (filter (fn [a] (= msg (:key a))) (:actions l))))
 
+(defn- drop-last-char [s]
+  (if (empty? s) s (subs s 0 (dec (count s)))))
+
 (defn update
   "Returns [new-state event]. Events: {:type :select ...} on enter,
    {:type :action ...} on an action key, {:type :cancel} on q/esc,
-   nil otherwise. Built-in keys win over action keys."
+   nil otherwise. Built-in keys win over action keys.
+
+   When :filterable?, printable keys build the :query and narrow the list
+   instead (so \"q\" types rather than quits, and letter action keys are
+   shadowed by typing); only :esc cancels."
   [l msg]
-  (cond
-    (= msg :up) [(move l -1) nil]
-    (= msg :down) [(move l 1) nil]
-    (= msg :enter) [l (select-event l)]
-    (or (= msg "q") (= msg :esc)) [l {:type :cancel}]
-    :else (if-let [action (action-for-key l msg)]
-            [l (action-event l action)]
-            [l nil])))
+  (if (:filterable? l)
+    (cond
+      (string? msg) [(refilter (assoc l :query (str (:query l) msg))) nil]
+      (= msg :backspace) [(refilter (assoc l :query (drop-last-char (:query l)))) nil]
+      (= msg :up) [(move l -1) nil]
+      (= msg :down) [(move l 1) nil]
+      (= msg :enter) [l (select-event l)]
+      (= msg :esc) [l {:type :cancel}]
+      ;; Non-printable keys (e.g. :ctrl-d) can't be typed, so they may still
+      ;; trigger actions while filtering; plain letters are already consumed
+      ;; by the (string? msg) branch above.
+      :else (if-let [action (action-for-key l msg)]
+              [l (action-event l action)]
+              [l nil]))
+    (cond
+      (= msg :up) [(move l -1) nil]
+      (= msg :down) [(move l 1) nil]
+      (= msg :enter) [l (select-event l)]
+      (or (= msg "q") (= msg :esc)) [l {:type :cancel}]
+      :else (if-let [action (action-for-key l msg)]
+              [l (action-event l action)]
+              [l nil]))))
+
+(defn- key-label [k]
+  ;; Display form of an action key: strings pass through; keyword keys like
+  ;; :ctrl-d render as "^d", others (e.g. :tab) as their name.
+  (if (keyword? k)
+    (let [n (name k)]
+      (if (string/starts-with? n "ctrl-") (str "^" (subs n 5)) n))
+    k))
+
+(defn- action-bindings [actions]
+  (map (fn [a] {:key (key-label (:key a))
+                :label (:label a)}) actions))
+
+;; Keys the widget or run loop consume before an action key would be seen, so
+;; an action bound to one of them can never fire while filtering.
+(def ^:private reserved-keys
+  #{:up :down :enter :esc :backspace :ctrl-c :resize})
+
+(defn- filter-fireable [actions]
+  ;; While filtering, only non-letter keys that aren't reserved can trigger
+  ;; actions (plain letters type into the query).
+  (filter (fn [a] (and (keyword? (:key a))
+                       (not (contains? reserved-keys (:key a)))))
+          actions))
 
 (defn bindings
   "Help-line entries (see tiny-tui.help/view) for this list's keys:
-   navigation, enter, one per action, quit."
+   navigation, enter, one per action, quit. When :filterable?, letter keys
+   type into the query, so only actions bound to non-letter keys (e.g.
+   :ctrl-d, shown as \"^d\") appear, \"q\" is dropped, and esc cancels."
   [l]
-  (vec (concat [{:key "↑/↓"
-                 :label "navigate"}
-                {:key "enter"
-                 :label "select"}]
-               (map (fn [a] {:key (:key a)
-                             :label (:label a)}) (:actions l))
-               [{:key "q"
-                 :label "quit"}])))
+  (let [nav [{:key "↑/↓"
+              :label "navigate"}
+             {:key "enter"
+              :label "select"}]]
+    (if (:filterable? l)
+      (vec (concat nav
+                   (action-bindings (filter-fireable (:actions l)))
+                   [{:key "esc"
+                     :label "cancel"}]))
+      (vec (concat nav
+                   (action-bindings (:actions l))
+                   [{:key "q"
+                     :label "quit"}])))))
 
 (defn- truncate [text max-w]
   ;; Only plain text is truncated: cutting styled text by raw index could
@@ -99,7 +184,7 @@
    fzf: scroll only enough to keep the cursor visible, tracked by :offset.
    When windowed and h >= 2, one row is reserved for the indicator."
   [l h]
-  (let [n (count (:items l))
+  (let [n (count (:filtered l))
         cursor (:cursor l)
         offset (:offset l)]
     (if (or (nil? h) (<= h 0) (<= n h))
@@ -121,11 +206,19 @@
          :windowed? true
          :indicator (when (>= h 2) (str (inc cursor) "/" n))}))))
 
+(defn- item-budget [l h]
+  ;; Rows for items+indicator: filterable lists spend one row on the query
+  ;; line, so the window gets one fewer than the whole block. nil means "no
+  ;; limit"; a value <= 0 (a single-row block) means no room for items.
+  (if (:filterable? l)
+    (when h (dec h))
+    h))
+
 (defn reconcile-offset
   "Persist a sticky scroll offset for block height `h`: return `l` with
    :offset set so the cursor stays visible. Call after moving the cursor."
   [l h]
-  (assoc l :offset (:start (window l h))))
+  (assoc l :offset (:start (window l (item-budget l h)))))
 
 (defn view
   "Render the list. view-opts may carry :width — the column budget; item
@@ -136,23 +229,39 @@
   ([l] (view l {}))
   ([l view-opts]
    (if (empty? (:items l))
+     ;; A genuinely empty list shows :empty-text (even when filterable —
+     ;; there is nothing to filter); "No matches" is reserved for a
+     ;; non-empty list narrowed to zero matches.
      (:empty-text l)
      (let [marker (:cursor-marker l)
            marker-w (style/visible-width marker)
            blank (apply str (repeat marker-w " "))
            max-w (when-let [w (:width view-opts)] (- w marker-w))
-           win (window l (:height view-opts))
-           start (:start win)
-           visible-items (take (- (:end win) start) (drop start (:items l)))
-           rows (map-indexed
-                  (fn [local item]
-                    (let [i (+ start local)
-                          text (truncate ((:item->text l) item) max-w)]
-                      (if (= i (:cursor l))
-                        (str marker ((:selected-style l) text))
-                        (str blank text))))
-                  visible-items)
-           rows (if (:indicator win)
-                  (concat rows [(style/dim (:indicator win))])
-                  rows)]
-       (string/join "\n" rows)))))
+           fset (:filtered l)
+           budget (item-budget l (:height view-opts))
+           ;; A single-row filterable block spends its only row on the query
+           ;; line, leaving no room for items or the "No matches" notice.
+           room? (or (nil? budget) (pos? budget))
+           win (if room?
+                 (window l budget)
+                 {:start 0
+                  :end 0
+                  :windowed? false
+                  :indicator nil})
+           ;; Each row is a position in the match set; map it back to the
+           ;; original item, and highlight when the position is the cursor.
+           item-rows (map (fn [pos]
+                            (let [item (nth (:items l) (nth fset pos))
+                                  text (truncate ((:item->text l) item) max-w)]
+                              (if (= pos (:cursor l))
+                                (str marker ((:selected-style l) text))
+                                (str blank text))))
+                          (range (:start win) (:end win)))
+           body (cond
+                  (not room?) []
+                  (and (:filterable? l) (empty? fset)) [(style/dim "No matches")]
+                  :else item-rows)
+           query-rows (when (:filterable? l)
+                        [(str "> " (:query l) (style/inverse " "))])
+           indicator-rows (when (:indicator win) [(style/dim (:indicator win))])]
+       (string/join "\n" (concat query-rows body indicator-rows))))))

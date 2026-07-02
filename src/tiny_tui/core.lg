@@ -148,9 +148,12 @@
    confirmation (configured by its :confirm-title and :confirm-message —
    a string or a fn of the item); the accepted action event carries
    :confirmed? true.
-   opts: :title, :items, :item->text, :actions (see tiny-tui.list/create),
-   :inline? (render in place, erasing on exit — see run), plus the run
-   testing hooks (:read-key-fn :render-fn :screen)."
+   opts: :title, :items, :item->text, :actions, :filterable?, :filter-fn
+   (see tiny-tui.list/create), :inline? (render in place, erasing on exit —
+   see run), plus the run testing hooks (:read-key-fn :render-fn :screen).
+   With :filterable? the user types to narrow the list; letter keys type
+   into the query, so bind actions to control keys (e.g. :key :ctrl-d) for
+   them to fire while filtering — plain-letter actions are shadowed."
   [opts]
   (let [result (run {:init {:mode :list
                             :list (tlist/create opts)}
