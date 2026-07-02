@@ -12,6 +12,7 @@
 (defn -main []
   (let [name (tui/input {:title "What's your name?"
                          :placeholder "type a name"
+                         :inline? true
                          :validate (fn [text]
                                      (when (empty? text) "Name can't be empty"))})]
     (if name

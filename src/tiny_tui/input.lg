@@ -77,10 +77,13 @@
     :else [s nil]))
 
 (defn- field-str [s]
-  ;; Draw our own block cursor with inverse video, since the run loop keeps
-  ;; the real terminal cursor hidden. Empty text shows the dim placeholder
-  ;; behind a leading cursor block; otherwise the char under the cursor is
-  ;; inverted, with a trailing inverse space when the cursor is at the end.
+  ;; Draw our own caret as a static inverse-video block, since the run loop
+  ;; keeps the real terminal cursor hidden. This is intentional: it does not
+  ;; blink (using the real cursor would, but that means threading caret
+  ;; coordinates out to the renderer — out of scope for this pure widget).
+  ;; Empty text shows the dim placeholder behind a leading cursor block;
+  ;; otherwise the char under the cursor is inverted, with a trailing inverse
+  ;; space when the cursor is at the end.
   (let [text (:text s)
         cursor (:cursor s)
         len (count text)]
