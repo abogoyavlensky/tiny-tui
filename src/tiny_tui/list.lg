@@ -16,7 +16,8 @@
    :actions (vec (:actions opts))
    :cursor-marker (or (:cursor-marker opts) "› ")
    :selected-style (or (:selected-style opts) style/inverse)
-   :cursor 0})
+   :cursor 0
+   :offset 0})
 
 (defn selected-index [l]
   (when (seq (:items l))
@@ -90,6 +91,41 @@
            (> (count text) max-w))
     (str (subs text 0 (dec max-w)) "…")
     text))
+
+(defn window
+  "Pure. Given list `l` and block height `h` (rows for the whole list block,
+   or nil for no limit), return the slice to render:
+   {:start i :end j :windowed? bool :indicator \"k/n\"-or-nil}. Sticky like
+   fzf: scroll only enough to keep the cursor visible, tracked by :offset.
+   When windowed and h >= 2, one row is reserved for the indicator."
+  [l h]
+  (let [n (count (:items l))
+        cursor (:cursor l)
+        offset (:offset l)]
+    (if (or (nil? h) (<= h 0) (<= n h))
+      {:start 0
+       :end n
+       :windowed? false
+       :indicator nil}
+      (let [body (if (>= h 2) (dec h) h)
+            max-start (max 0 (- n body))
+            o (min offset max-start)
+            o (cond
+                (< cursor o) cursor
+                (> cursor (+ o (dec body))) (- cursor (dec body))
+                :else o)
+            start (max 0 (min o max-start))
+            end (min n (+ start body))]
+        {:start start
+         :end end
+         :windowed? true
+         :indicator (when (>= h 2) (str (inc cursor) "/" n))}))))
+
+(defn reconcile-offset
+  "Persist a sticky scroll offset for block height `h`: return `l` with
+   :offset set so the cursor stays visible. Call after moving the cursor."
+  [l h]
+  (assoc l :offset (:start (window l h))))
 
 (defn view
   "Render the list. view-opts may carry :width — the column budget; item
