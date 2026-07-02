@@ -1,6 +1,8 @@
 # layout/columns Implementation Plan
 
-> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+
+> **Status: ✅ Complete (2026-07-02).** Both tasks implemented, codex-reviewed (one ragged-row fix folded in), and PTY-verified. See the Implementation Summary at the bottom.
 
 **Goal:** Add `layout/columns` — given rows of cells, pad each column to its per-column max visible width — so tabular lists align without every caller hand-padding in `:item->text`.
 
@@ -72,7 +74,7 @@ Uses only helpers already in the file/stdlib (`pad`, `string/join`, `style/visib
 - Modify: `src/tiny_tui/layout.lg`
 - Test: `test/tiny_tui/layout_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   In `layout_test.lg`, add tests for `layout/columns`:
   - even rows: `[["a" "x"] ["abc" "y"]]` → `["a    x" "abc  y"]` (col 0 padded to 3 + two-space sep; last col unpadded).
   - last column unpadded: no row ends in a space (e.g. assert the first row equals `"a    x"`, not `"a    x "`).
@@ -82,18 +84,18 @@ Uses only helpers already in the file/stdlib (`pad`, `string/join`, `style/visib
   - empty: `(columns [])` → `[]`.
   - single column: `[["a"] ["bb"]]` → `["a" "bb"]` (nothing to pad — one column is the last column).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — `layout/columns` unresolved.
 
-- [ ] **Step 3: Implement `columns`**
+- [x] **Step 3: Implement `columns`**
   Add the 2-arity `columns` per the Algorithm, after `pad`. Docstring: aligns rows of cells to per-column max visible width; last column left unpadded; separator defaults to two spaces.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS (all suites).
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(layout): add columns for aligned tabular rows"`
 
@@ -105,16 +107,16 @@ Uses only helpers already in the file/stdlib (`pad`, `string/join`, `style/visib
 - Create: `examples/columns_select.lg`
 - Modify: `README.md`, `docs/ROADMAP.md`
 
-- [ ] **Step 1: Write `examples/columns_select.lg`**
+- [x] **Step 1: Write `examples/columns_select.lg`**
   A tabular `select`: a list of deps (name + version, maybe a source column), build aligned lines with `layout/columns` from all items, zip the lines onto the items (`(map (fn [d line] (assoc d :row line)) deps lines)`), and `tui/select {:items ... :item->text :row}`. Print the chosen item's name. Include the `(when-not *compiling-aot* (-main))` guard and a short header comment.
 
-- [ ] **Step 2: Document in `README.md`**
+- [x] **Step 2: Document in `README.md`**
   Add a short note near the list/layout description: `layout/columns` aligns rows of cells to per-column width (using visible width, so styled cells align) — build the aligned lines once and use them as `:item->text`. Show the zip snippet. Add `lgx run examples/columns_select.lg   # aligned tabular select` to the examples list. Use /writing-clearly.
 
-- [ ] **Step 3: Update `docs/ROADMAP.md`**
+- [x] **Step 3: Update `docs/ROADMAP.md`**
   Mark the `layout/columns` item **Delivered** (pointing at this plan): pure helper in `tiny-tui.layout`, per-column max visible width, last column unpadded, composes with `select` by zipping lines onto items.
 
-- [ ] **Step 4: PTY check + commit**
+- [x] **Step 4: PTY check + commit**
   Drive `examples/columns_select.lg` on a pty (per `docs/pty-verification.md`): confirm the columns visibly align in the rendered frame and a pick prints the selected name; check a cancel path. Then:
   `git commit -am "docs: add columns example and document layout/columns"`
 
@@ -126,3 +128,26 @@ Uses only helpers already in the file/stdlib (`pad`, `string/join`, `style/visib
 - `lgx fmt` leaves the tree clean.
 - `examples/columns_select.lg` renders visibly aligned columns on a real (pty) terminal and returns a pick.
 - README and `docs/ROADMAP.md` reflect the delivered `layout/columns`.
+
+---
+
+## Implementation Summary (2026-07-02)
+
+Delivered on branch `layout-columns` across two commits:
+
+- `feat(layout): add columns for aligned tabular rows`
+- `docs: add columns example and document layout/columns`
+
+**What shipped:** `layout/columns` (2 arities, default two-space separator) pads each column to its max `style/visible-width` — so styled cells align — leaves the last cell of each row unpadded, and returns a vector of row strings. Callers build the aligned lines once, zip them onto items, and point `:item->text` at them (or `vstack` them for a static table). Pure helper; no `list`/`select` change. 162 tests pass (8 new).
+
+**PTY verification (`examples/columns_select.lg`):** the rendered frame shows aligned columns —
+```
+› org.clojure/data.json  2.5.1     maven
+  lambdaisland/uri       1.19.155  clojars
+  nooga/let-go-async     0.1.0     git
+```
+— down+enter returned `Chose: lambdaisland/uri`, and `q` cancelled cleanly with the terminal restored.
+
+**Issues / notes:**
+- **One codex finding, fixed:** the initial version (and my own test) emitted a trailing separator for a ragged row missing its final column (`[["a" "b"] ["c"]]` → `"c  "`), which contradicts the no-trailing-whitespace goal and would smear a selected row's inverse highlight. Added `content-count` to **trim trailing blank cells** per row before joining — a *middle* blank still pads (to keep later columns aligned), only trailing ones are dropped. Locked with an updated ragged test and a new middle-blank test; re-review came back clean. The plan's Algorithm sketch (pad-to-`(dec ncols)`) was superseded by this per-row trimming.
+- **Left-align only in V1** — right-aligning numeric columns (versions, counts) is an easy future add.
