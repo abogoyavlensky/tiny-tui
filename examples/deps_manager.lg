@@ -1,0 +1,40 @@
+;; Stay-in-the-loop demo: delete a dependency in place with :on-action.
+;;
+;; Pressing "d" on a row asks for confirmation, then the :on-action handler
+;; removes it and returns {:items ... :status ...}. select keeps looping with
+;; the updated list and a one-line status (cleared on the next key) instead of
+;; exiting — so you can remove several deps, then quit with q/esc.
+;;
+;; Run from the repo root: lgx run examples/deps_manager.lg
+
+(ns examples.deps-manager
+  (:require [tiny-tui.core :as tui]
+            [tiny-tui.style :as style]))
+
+(def deps
+  (atom [{:name "org.clojure/data.json"}
+         {:name "lambdaisland/uri"}
+         {:name "nooga/let-go-async"}
+         {:name "abogoyavlensky/lgx"}]))
+
+(defn remove-dep [event]
+  (swap! deps (fn [xs] (vec (remove (fn [d] (= d (:item event))) xs))))
+  {:items @deps
+   :status (style/fg :green (str "Removed " (:name (:item event))))})
+
+(defn -main []
+  (let [result (tui/select {:title "Dependencies"
+                            :items @deps
+                            :item->text :name
+                            :actions [{:id :remove
+                                       :key "d"
+                                       :label "remove"
+                                       :destructive? true
+                                       :confirm-title "Remove dependency?"
+                                       :confirm-message (fn [d] (str "Remove " (:name d) "?"))}]
+                            :on-action remove-dep})]
+    (case (:type result)
+      :select (println "Opened:" (:name (:item result)))
+      :cancel (println "Done. Remaining:" (count @deps)))))
+
+(when-not *compiling-aot* (-main))

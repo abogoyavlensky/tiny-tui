@@ -2,20 +2,35 @@
 ;; enter selects. With :filterable? true the query owns the keyboard, so
 ;; letter keys (including "q") type into the filter — only esc cancels.
 ;;
+;; Actions bind to control keys so they still fire while typing: Ctrl-D
+;; deletes the highlighted branch in place via :on-action, which keeps the
+;; loop alive with the narrowed list and a status line.
+;;
 ;; Run from the repo root: lgx run examples/filter_select.lg
 
 (ns examples.filter-select
-  (:require [tiny-tui.core :as tui]))
+  (:require [tiny-tui.core :as tui]
+            [tiny-tui.style :as style]))
 
 (def branches
-  (vec (map (fn [i] {:id i :name (str "branch-" i)}) (range 1 51))))
+  (atom (vec (map (fn [i] {:id i :name (str "branch-" i)}) (range 1 51)))))
+
+(defn delete-branch [event]
+  (swap! branches (fn [xs] (vec (remove (fn [b] (= b (:item event))) xs))))
+  {:items @branches
+   :status (style/fg :green (str "Deleted " (:name (:item event))))})
 
 (defn -main []
   (let [result (tui/select {:title "Checkout branch (type to filter)"
-                            :items branches
+                            :items @branches
                             :item->text :name
-                            :actions [{:id :delete :key :ctrl-d :label "delete" :destructive? true}]
-                            :filterable? true})]
+                            :filterable? true
+                            :actions [{:id :delete
+                                       :key :ctrl-d
+                                       :label "delete"
+                                       :destructive? true
+                                       :confirm-message (fn [b] (str "Delete " (:name b) "?"))}]
+                            :on-action delete-branch})]
     (case (:type result)
       :select (println "Checked out:" (:name (:item result)))
       :cancel (println "Cancelled."))))

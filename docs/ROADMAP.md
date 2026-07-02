@@ -10,7 +10,7 @@ The three gaps that block real apps today
 
 The structural question worth deciding early
 
-Staying in the loop. Today select returns on any action — so a dependency manager that deletes an item has to re-launch select to show the updated list, losing cursor position and flickering. Real tools want: delete → list updates in place → status line says "Removed lambdaisland/uri" → keep browsing → quit.
+Staying in the loop. Today select returns on any action — so a dependency manager that deletes an item has to re-launch select to show the updated list, losing cursor position and flickering. Real tools want: delete → list updates in place → status line says "Removed lambdaisland/uri" → keep browsing → quit. **Delivered** (`docs/plans/2026-07-02-on-action-loop.md`): `:on-action` on `select` receives the (confirmed) action event and returns `{:items … :status …}`; items replace the list in place via `tlist/set-items` (cursor + filter preserved), the status shows until the next keypress, and the loop continues. Enter and esc still exit; the widgets stay pure (the handler is the caller's code).
 
 Two ways to get there:
 
