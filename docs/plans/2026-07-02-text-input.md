@@ -1,6 +1,8 @@
 # Text Input Widget Implementation Plan
 
-> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+
+> **Status: ✅ Complete (2026-07-02).** All six tasks implemented, reviewed by codex, and PTY-verified. See the Implementation Summary at the bottom.
 
 **Goal:** Add a single-line text input widget (`tiny-tui.input`) and a `tui/input` helper, so tools can prompt for a string — a name, a search query, a confirmation phrase — with an optional validator and inline error.
 
@@ -77,7 +79,7 @@ Mirror `confirm`: build a `run` map with `:init {:input (tinput/create opts)}`, 
 - Create: `src/tiny_tui/input.lg`
 - Test: `test/tiny_tui/input_test.lg`
 
-- [ ] **Step 1: Write failing tests for create + editing**
+- [x] **Step 1: Write failing tests for create + editing**
   New `input_test.lg` (ns `tiny-tui.input-test`, require `tiny-tui.input :as tinput`). Test:
   - `create` with no `:value` → `:text ""`, `:cursor 0`; with `:value "hi"` → `:text "hi"`, `:cursor 2`.
   - insert: from empty, `update` with `"a"` then `"b"` → text `"ab"`, cursor 2; insert mid-string (cursor moved left first) inserts at the cursor.
@@ -87,18 +89,18 @@ Mirror `confirm`: build a `run` map with `:init {:input (tinput/create opts)}`, 
   - **anti-quit:** `"q"` inserts a literal `q` (text `"q"`), returns no event.
   - moving/editing returns `[state nil]` (no event).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — `tinput/*` unresolved.
 
-- [ ] **Step 3: Implement `create` and `update` (edit/motion only)**
+- [x] **Step 3: Implement `create` and `update` (edit/motion only)**
   Implement `create` (seed `:text`/`:cursor`/`:placeholder`/`:validate`/`:error nil`) and `update` for the string-insert rule and `:backspace :delete :left :right :home :end`, plus the `[s nil]` fallback. Leave `:enter`/`:esc` for Task 2 (they can fall through to the ignore branch for now, but structure `update` as a `cond` ready for them).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS (all suites).
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(input): add text input widget editing and cursor motion"`
 
@@ -110,7 +112,7 @@ Mirror `confirm`: build a `run` map with `:init {:input (tinput/create opts)}`, 
 - Modify: `src/tiny_tui/input.lg`
 - Test: `test/tiny_tui/input_test.lg`
 
-- [ ] **Step 1: Write failing tests for submit/validate/cancel**
+- [x] **Step 1: Write failing tests for submit/validate/cancel**
   Add tests:
   - `:enter` with no `:validate` → `{:type :submit :text "<text>"}`.
   - `:enter` with `:validate` returning a string (e.g. empty-check) → no event (`nil`), state `:error` set to that string.
@@ -118,18 +120,18 @@ Mirror `confirm`: build a `run` map with `:init {:input (tinput/create opts)}`, 
   - `:enter` with `:validate` that returns `nil` for the current text → submits.
   - `:esc` → `{:type :cancel}`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — enter/esc not handled yet.
 
-- [ ] **Step 3: Implement `:enter`/`:esc` and error-clearing**
+- [x] **Step 3: Implement `:enter`/`:esc` and error-clearing**
   Add the `:enter` branch (run `:validate`; set `:error` + no event on failure, else `{:type :submit :text text}`) and `:esc` → `{:type :cancel}`. Ensure every edit/motion branch clears `:error` (set it to nil on text change; simplest is to clear on all edit keys).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(input): submit with optional validation and cancel"`
 
@@ -141,7 +143,7 @@ Mirror `confirm`: build a `run` map with `:init {:input (tinput/create opts)}`, 
 - Modify: `src/tiny_tui/input.lg`
 - Test: `test/tiny_tui/input_test.lg`
 
-- [ ] **Step 1: Write failing tests for `view`**
+- [x] **Step 1: Write failing tests for `view`**
   Assert exact strings via `layout/vstack` / `string/join`, using `style/inverse`, `style/dim`, `style/bold`, `style/fg`:
   - empty text, placeholder `"name"`, no title → `(str (style/inverse " ") (style/dim "name"))`.
   - text `"ab"`, cursor 1, no title → `(str "a" (style/inverse "b"))` (cursor block on `b`, nothing after).
@@ -149,18 +151,18 @@ Mirror `confirm`: build a `run` map with `:init {:input (tinput/create opts)}`, 
   - with `:title "Name"` → bold title + blank line above the field.
   - with `:error "required"` → a `(style/fg :red "required")` line (preceded by a blank) below the field.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — `view` missing / not composing these.
 
-- [ ] **Step 3: Implement `field-str` and `view`**
+- [x] **Step 3: Implement `field-str` and `view`**
   Add private `field-str` (block-cursor logic above) and `view` (vstack of optional title, field, optional error line), matching `confirm/view`'s composition style. No terminal access.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(input): render field with a block cursor, placeholder, and error line"`
 
@@ -172,24 +174,24 @@ Mirror `confirm`: build a `run` map with `:init {:input (tinput/create opts)}`, 
 - Modify: `src/tiny_tui/core.lg`
 - Test: `test/tiny_tui/core_test.lg`
 
-- [ ] **Step 1: Write failing headless tests**
+- [x] **Step 1: Write failing headless tests**
   In `core_test.lg`, add `tui/input` flows using the scripted-key pattern already in the file (`:screen false`, `:read-key-fn`, `:render-fn`):
   - typing `"h" "i" :enter` → returns `"hi"`.
   - `:esc` (or `:ctrl-c`) → returns `nil`.
   - `:validate` that rejects empty: `:enter` on empty stays (no return yet), then typing `"x" :enter` → returns `"x"`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — `tui/input` unresolved.
 
-- [ ] **Step 3: Implement `input` + `input-bindings`**
+- [x] **Step 3: Implement `input` + `input-bindings`**
   Require `tiny-tui.input :as tinput` in `core`. Add private `input-bindings` and the public `input` helper (mirror `confirm`): build the `run` map, forward `:inline?` and the test hooks, and unwrap `{:type :submit :text t}` → `t`, else `nil`. Docstring lists `:title :placeholder :value :validate :inline?` and the test hooks.
 
-- [ ] **Step 4: Run the full suite**
+- [x] **Step 4: Run the full suite**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(core): add tui/input helper"`
 
@@ -201,16 +203,16 @@ Mirror `confirm`: build a `run` map with `:init {:input (tinput/create opts)}`, 
 - Create: `examples/input_name.lg`
 - Modify: `README.md`, `docs/ROADMAP.md`
 
-- [ ] **Step 1: Write `examples/input_name.lg`**
+- [x] **Step 1: Write `examples/input_name.lg`**
   Model on `examples/select_project.lg`: call `tui/input` with a `:title`, `:placeholder`, and a `:validate` that rejects empty (e.g. returns `"Name can't be empty"`), then `println` the result or a cancel message. Include the `(when-not *compiling-aot* (-main))` guard and a short header comment.
 
-- [ ] **Step 2: Document `tui/input` in `README.md`**
+- [x] **Step 2: Document `tui/input` in `README.md`**
   Add a short section near `confirm`: prompt for a line of text, returns the string or nil on cancel, with `:placeholder` and `:validate`. Show the empty-check example. Add `lgx run examples/input_name.lg   # tui/input` to the examples list. Use /writing-clearly.
 
-- [ ] **Step 3: Update `docs/ROADMAP.md`**
+- [x] **Step 3: Update `docs/ROADMAP.md`**
   Mark item 1 (text input) **Delivered**, pointing at this plan; note single-line, validate-on-submit, block cursor, `:inline?` supported.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -am "docs: add input example and document tui/input"`
 
 ---
@@ -221,27 +223,27 @@ Mirror `confirm`: build a `run` map with `:init {:input (tinput/create opts)}`, 
 
 Follow `docs/pty-verification.md`.
 
-- [ ] **Step 1: Type and submit**
+- [x] **Step 1: Type and submit**
   Run: `printf 'Ada\r' | timeout 15 script -qec "lgx run examples/input_name.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r' | tail -3`
   Expected: the printed result contains `Ada` (the submitted text).
 
-- [ ] **Step 2: Editing works (backspace)**
+- [x] **Step 2: Editing works (backspace)**
   Run: `printf 'Adaa\177\r' | timeout 15 script -qec "lgx run examples/input_name.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r' | tail -3`
   (`\177` = backspace) Expected: result is `Ada`, confirming the last `a` was deleted.
 
-- [ ] **Step 3: Block cursor renders**
+- [x] **Step 3: Block cursor renders**
   Run: `printf 'Ada' | timeout 15 script -qec "lgx run examples/input_name.lg" /dev/null | grep -a -c "$(printf '\033')\[7m"`
   Expected: ≥ 1 — the inverse (`ESC[7m`) block cursor is present. (No trailing `\r`, so input stays open until stdin closes.)
 
-- [ ] **Step 4: Validation blocks empty submit**
+- [x] **Step 4: Validation blocks empty submit**
   Run: `printf '\r' | timeout 15 script -qec "lgx run examples/input_name.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r'`
   Expected: the red error text appears; then stdin closes (end-of-input) and the run ends via cancel — confirm no crash and the terminal is restored (`ESC[?25h`, `ESC[?1049l` present when run without stripping).
 
-- [ ] **Step 5: Cancel path**
+- [x] **Step 5: Cancel path**
   Run: `printf '\033' | timeout 15 script -qec "lgx run examples/input_name.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r' | tail -2`
   Expected: the cancel branch prints; terminal restored.
 
-- [ ] **Step 6: Record results**
+- [x] **Step 6: Record results**
   Note the outcome. If any check fails, fix in the relevant earlier task and re-run. No commit needed for a pass-only run.
 
 ---
@@ -252,3 +254,30 @@ Follow `docs/pty-verification.md`.
 - `lgx fmt` leaves the tree clean.
 - On a real (pty) terminal, `tui/input` accepts and edits text, renders a visible block cursor, blocks an invalid submit with a red message, submits a valid value, and cancels cleanly on esc.
 - README and `docs/ROADMAP.md` reflect the delivered text input.
+
+---
+
+## Implementation Summary (2026-07-02)
+
+Delivered on branch `input` across five commits (Task 6 was verification-only with no diff):
+
+- `feat(input): add text input widget editing and cursor motion`
+- `feat(input): submit with optional validation and cancel`
+- `feat(input): render field with a block cursor, placeholder, and error line`
+- `feat(core): add tui/input helper`
+- `docs: add input example and document tui/input`
+
+**What shipped:** `tiny-tui.input` — a pure single-line text field (`create`/`update`/`view`) modeled on `confirm` — plus the `tui/input` helper in `core`. Editing (insert / `:backspace` / `:delete`), cursor motion (`:left :right :home :end`, clamped), submit-with-`:validate` (blocks with a red inline error that clears on the next edit), and `:esc`/`:ctrl-c` cancel. The widget draws its own inverse-video block cursor since the real cursor stays hidden. `tui/input` returns the entered string on submit or `nil` on cancel, and forwards `:inline?` and the test hooks. 98 unit + headless tests pass (17 new). Each task cleared a `review-with-codex` checkpoint with no findings.
+
+**PTY verification (`examples/input_name.lg`):**
+- Type `Ada` + enter → `Hello, Ada!`.
+- `Adaa` + backspace + enter → `Hello, Ada!` (edit applied).
+- The inverse block cursor (`ESC[7m`) renders while typing.
+- Empty submit shows the red `Name can't be empty` error (`ESC[31m`) and correctly keeps the field open; a following esc cancels cleanly (`ESC[?25h` + `ESC[?1049l` + `Cancelled.`).
+- Esc alone cancels cleanly.
+
+**Issues / notes:**
+- **Caught a real bug via a failing view test:** the first `create` dropped `:title` (never stored it), so `view` rendered no title. Fixed by adding `:title (:title opts)` to `create` — the snapshot test made it obvious.
+- **`str`-shadowing avoided:** the insert helper's parameter was renamed from `str` to `ins` so it doesn't shadow the `str` function it calls.
+- **PTY EOF nuance:** the `script` pty does not propagate the pipe's EOF to the slave, so an input left open (blocked empty submit, or typing without a terminating key) hangs until `timeout` kills it — the documented "missed key blocks forever" gotcha. Verify blocked/edit paths by sending a terminating key (esc/enter), not by relying on stdin closing. The widget behavior (staying open after a rejected submit) is correct.
+- **Known limitation (documented):** no horizontal scrolling for text wider than the terminal in V1.
