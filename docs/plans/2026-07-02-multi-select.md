@@ -1,6 +1,8 @@
 # Multi-Select Implementation Plan
 
-> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+
+> **Status: ✅ Complete (2026-07-02).** All five tasks implemented, codex-reviewed (one extra fix folded in), and PTY-verified. See the Implementation Summary at the bottom.
 
 **Goal:** Add `:multi? true` to the list/select — space toggles a checkbox on the current row, enter submits the checked set — for picking deps to upgrade, files to stage, tests to run.
 
@@ -79,7 +81,7 @@ Returns the chosen **items vector** — `nil` on cancel, `[]` on an empty submit
 - Modify: `src/tiny_tui/list.lg`
 - Test: `test/tiny_tui/list_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   In `list_test.lg`:
   - `create` with `:multi? true` → `:multi? true`, `:selected #{}`.
   - space toggles the current row: on a fresh multi list, `update` with `" "` adds index 0 to `:selected`; again removes it.
@@ -88,18 +90,18 @@ Returns the chosen **items vector** — `nil` on cancel, `[]` on an empty submit
   - enter emits `{:type :submit :items [...] :indices [...]}` with items in index order (toggle indices 2 then 0 → `:indices [0 2]`, matching items).
   - enter with nothing selected → `{:type :submit :items [] :indices []}`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — `:multi?`/toggle/submit absent.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add `:multi?`/`:selected #{}` to `create`. Add private `toggle [l]` (`disj`/`conj` `(selected-index l)` in `:selected`; no-op when nil) and `submit-event [l]` (`(let [idxs (sort (:selected l))] {:type :submit :items (vec (map #(nth (:items l) %) idxs)) :indices (vec idxs)})`), defined before `update`. In both `update` branches: add a leading `(and (:multi? l) (= msg " ")) [(toggle l) nil]` clause (in the filterable branch, before `(string? msg)`); change the `:enter` clause to `(if (:multi? l) (submit-event l) (select-event l))`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS (all suites; existing list tests untouched).
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(list): multi-select state — space toggles, enter submits"`
 
@@ -111,25 +113,25 @@ Returns the chosen **items vector** — `nil` on cancel, `[]` on an empty submit
 - Modify: `src/tiny_tui/list.lg`
 - Test: `test/tiny_tui/list_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `view` for a multi list of `["a" "b"]` with index 0 toggled: row 0 (cursor, checked) = `(str "› " "[x] " (style/inverse "a"))`; row 1 = `(str "  " "[ ] " "b")`. Assert the exact joined string.
   - a non-cursor checked row renders `[x]` without the inverse cursor style (toggle index 1, move cursor to 0).
   - width truncation accounts for the checkbox: a multi list with `:width` small truncates the text using the reduced budget (marker 2 + checkbox 4).
   - `bindings` for `:multi?` → `[navigate, space toggle, enter submit, q quit]`; for `:multi? + :filterable?` → `[navigate, space toggle, enter submit, esc cancel]`.
   - a non-multi `view`/`bindings` snapshot is unchanged (regression guard).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — no checkbox column / multi bindings.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add private `checked "[x] "` / `unchecked "[ ] "` defs. In `view`, when `:multi?`, compute the checkbox per row from `(contains? (:selected l) (nth fset pos))` and insert it after the marker/blank (`(str marker checkbox styled-text)` / `(str blank checkbox text)`); reduce `max-w` by the checkbox width when multi. In `bindings`, build the nav entries as `navigate · space toggle · enter submit` when `:multi?`, else the current `navigate · enter select`; keep the existing action + quit/cancel tail.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(list): render the multi-select checkbox column and adaptive help"`
 
@@ -141,25 +143,25 @@ Returns the chosen **items vector** — `nil` on cancel, `[]` on an empty submit
 - Modify: `src/tiny_tui/core.lg`
 - Test: `test/tiny_tui/core_test.lg`
 
-- [ ] **Step 1: Write failing headless tests**
+- [x] **Step 1: Write failing headless tests**
   In `core_test.lg` (scripted keys, `:screen false`):
   - `tui/multi-select` with items; toggle two rows (`" " :down " " :enter`) → returns the two chosen items in index order.
   - enter with nothing toggled → returns `[]`.
   - `:esc`/`:ctrl-c` → returns `nil`.
   - via `tui/select {:multi? true}`, `:enter` returns a `{:type :submit :items … :indices …}` event.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — `tui/multi-select` unresolved.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add `tui/multi-select` (wrap `select` with `:multi? true`, unwrap `:submit` → `:items`, else nil) with a docstring (returns the chosen items vector; `nil` on cancel, `[]` on empty submit; opts as `select` plus `:filterable?` composes). Add a `:multi?` note to `select`'s docstring. Confirm no other core change is needed (the `:submit` event flows through `select-update`).
 
-- [ ] **Step 4: Run the full suite**
+- [x] **Step 4: Run the full suite**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(core): add tui/multi-select"`
 
@@ -171,16 +173,16 @@ Returns the chosen **items vector** — `nil` on cancel, `[]` on an empty submit
 - Create: `examples/multi_select.lg`
 - Modify: `README.md`, `docs/ROADMAP.md`
 
-- [ ] **Step 1: Write `examples/multi_select.lg`**
+- [x] **Step 1: Write `examples/multi_select.lg`**
   A `tui/multi-select` demo: a list of items (e.g. deps or files), `:title`, `:item->text`; print the chosen set (or a cancel/none message). Include the `(when-not *compiling-aot* (-main))` guard and a short header comment.
 
-- [ ] **Step 2: Document in `README.md`**
+- [x] **Step 2: Document in `README.md`**
   Add a short section: `tui/multi-select` (or `:multi? true`) — space toggles a checkbox, enter submits the set; returns the chosen items vector (nil on cancel). Note it composes with `:filterable?`. Add `lgx run examples/multi_select.lg   # multi-select with checkboxes` to the examples list. Use /writing-clearly.
 
-- [ ] **Step 3: Update `docs/ROADMAP.md`**
+- [x] **Step 3: Update `docs/ROADMAP.md`**
   Mark the "Multi-select" item **Delivered** (pointing at this plan): `:multi?` on the list, `:selected` set of indices + checkbox column, `tui/multi-select` returns the items; composes with filtering/viewport.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -am "docs: add multi-select example and document :multi?"`
 
 ---
@@ -191,19 +193,19 @@ Returns the chosen **items vector** — `nil` on cancel, `[]` on an empty submit
 
 Follow `docs/pty-verification.md`. Space is a literal space byte; enter is `\r`.
 
-- [ ] **Step 1: Toggle and submit**
+- [x] **Step 1: Toggle and submit**
   Drive `examples/multi_select.lg`: `space`, `down`, `space`, `enter` (toggle rows 0 and 1, submit). Run with the escape-stripping filter and assert the printed chosen set names both toggled items.
 
-- [ ] **Step 2: Checkbox column renders**
+- [x] **Step 2: Checkbox column renders**
   With a partial drive (e.g. `space` then no terminator, or `space` + `esc`), assert `[x]` and `[ ]` appear in the stripped frame output.
 
-- [ ] **Step 3: Empty submit**
+- [x] **Step 3: Empty submit**
   `enter` immediately → the example prints its empty/none branch (returned `[]`).
 
-- [ ] **Step 4: Cancel path**
+- [x] **Step 4: Cancel path**
   `printf 'q'` (non-filterable) or `\033` — the example prints its cancel branch; terminal restored (`ESC[?25h`, `ESC[?1049l`).
 
-- [ ] **Step 5: Record results**
+- [x] **Step 5: Record results**
   Note the outcome. Fix-and-re-run on any failure. No commit needed for a pass-only run.
 
 ---
@@ -214,3 +216,23 @@ Follow `docs/pty-verification.md`. Space is a literal space byte; enter is `\r`.
 - `lgx fmt` leaves the tree clean.
 - On a real (pty) terminal, space toggles a visible checkbox, enter submits the chosen set, an empty submit returns `[]`, and cancel returns cleanly.
 - README and `docs/ROADMAP.md` reflect the delivered multi-select.
+
+---
+
+## Implementation Summary (2026-07-02)
+
+Delivered on branch `multiselect` across four commits (Task 5 was verification-only with no diff):
+
+- `feat(list): multi-select state — space toggles, enter submits`
+- `feat(list): render the multi-select checkbox column and adaptive help`
+- `feat(core): add tui/multi-select`
+- `docs: add multi-select example and document :multi?`
+
+**What shipped:** `:multi?` on the list widget. `create` adds `:multi?` and a `:selected` set of **original indices** (stable across filtering). Space toggles the highlighted row's index (`toggle`), enter emits `{:type :submit :items … :indices …}` (`submit-event`, index-ordered); both are woven into the filterable and non-filterable `update` branches (space claimed before filter-typing). `view` prepends a `[x] `/`[ ] ` checkbox column (width-budget-aware for truncation); `bindings` shows `navigate · space toggle · enter submit`. `tui/multi-select` wraps `select` with `:multi? true` and returns the chosen items vector — `nil` on cancel, `[]` on empty submit. **`select` needed no logic change** (the `:submit` event flows straight through, `:multi?` reaches `tlist/create` via opts) — the same architecture win as filtering. 154 tests pass (18 new); non-`:multi?` behavior is byte-identical.
+
+**PTY verification (`examples/multi_select.lg`):** the frames show the checkbox toggling live (`[ ] src/core.lg` → `[x] src/core.lg`); space/down/space/enter staged both files; enter with nothing checked printed `Nothing staged.` (returned `[]`); `q` printed `Cancelled.` (nil) with the terminal restored (`ESC[?25h`, `ESC[?1049l`).
+
+**Issues / notes:**
+- **One extra codex finding, fixed in Task 1:** `set-items` (used by `:on-action`) left stale `:selected` indices pointing into the old item vector — a wrong-item or out-of-bounds `nth` risk if multi-select and `:on-action` are combined. `set-items` now resets `:selected` to `#{}` on item replacement (with a locking test). Codex's other two findings (render the checkbox, fix the help line) were Task 2's scope and cleared there.
+- **Filterable + multi tradeoff (as designed):** space is the toggle, so a literal space can't be typed into the filter query. Other printables still narrow.
+- **Deliberately out of V1:** toggle-all, range-select, pre-seeded `:selected`, and configurable checkbox glyphs — all easy additive follow-ups.
