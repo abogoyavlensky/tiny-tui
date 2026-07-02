@@ -47,6 +47,20 @@
                      (range (count items)))]
     (assoc l :filtered (vec idxs) :cursor 0 :offset 0)))
 
+(defn set-items
+  "Replace the list's items in place, re-applying the current filter query
+   and clamping the cursor into the new (filtered) range — so a caller can
+   update the list (e.g. after a delete) without losing the user's position.
+   Offset resets to 0; reconcile-offset afterward to re-window."
+  [l items]
+  (let [items (vec items)
+        base (assoc l :items items)
+        filtered (vec (filter (fn [i] (matches? base (:query base) (nth items i)))
+                              (range (count items))))
+        n (count filtered)
+        cursor (if (zero? n) 0 (min (:cursor l) (dec n)))]
+    (assoc base :filtered filtered :cursor cursor :offset 0)))
+
 ;; The cursor indexes into :filtered (positions in the current match set);
 ;; :filtered maps back to the original :items index, so a select event's
 ;; :index stays stable regardless of the query. For non-filterable lists
