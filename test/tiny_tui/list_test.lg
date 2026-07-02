@@ -611,3 +611,55 @@
   (let [l (first (tlist/update (make-multi {}) " "))]  ; select index 0
     (is (= #{0} (:selected l)))
     (is (= #{} (:selected (tlist/set-items l ["x" "y"]))))))
+
+(deftest test-view-multi-checkbox
+  ;; index 0 toggled, cursor on 0 -> checked + highlighted; row 1 unchecked
+  (let [l (first (tlist/update (tlist/create {:items ["a" "b"]
+                                              :multi? true}) " "))]
+    (is (= (string/join "\n"
+                        [(str "› " "[x] " (style/inverse "a"))
+                         (str "  " "[ ] " "b")])
+           (tlist/view l)))))
+
+(deftest test-view-multi-checked-non-cursor-row
+  ;; check state and cursor highlight are independent
+  (let [l (tlist/create {:items ["a" "b"]
+                         :multi? true})
+        l (first (tlist/update (first (tlist/update l :down)) " ")) ; cursor->1, check 1
+        l (first (tlist/update l :up))]                             ; cursor->0
+    (is (= (string/join "\n"
+                        [(str "› " "[ ] " (style/inverse "a"))
+                         (str "  " "[x] " "b")])
+           (tlist/view l)))))
+
+(deftest test-view-multi-truncation-accounts-for-checkbox
+  ;; width 12: budget = 12 - 2 (marker) - 4 (checkbox) = 6 cols
+  (let [l (tlist/create {:items ["abcdefghij"]
+                         :multi? true})]
+    (is (= (str "› " "[ ] " (style/inverse "abcde…"))
+           (tlist/view l {:width 12})))))
+
+(deftest test-bindings-multi
+  (is (= [{:key "↑/↓"
+           :label "navigate"}
+          {:key "space"
+           :label "toggle"}
+          {:key "enter"
+           :label "submit"}
+          {:key "q"
+           :label "quit"}]
+         (tlist/bindings (tlist/create {:items ["a"]
+                                        :multi? true})))))
+
+(deftest test-bindings-multi-filterable
+  (is (= [{:key "↑/↓"
+           :label "navigate"}
+          {:key "space"
+           :label "toggle"}
+          {:key "enter"
+           :label "submit"}
+          {:key "esc"
+           :label "cancel"}]
+         (tlist/bindings (tlist/create {:items ["a"]
+                                        :multi? true
+                                        :filterable? true})))))

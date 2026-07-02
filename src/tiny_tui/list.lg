@@ -184,14 +184,22 @@
 
 (defn bindings
   "Help-line entries (see tiny-tui.help/view) for this list's keys:
-   navigation, enter, one per action, quit. When :filterable?, letter keys
-   type into the query, so only actions bound to non-letter keys (e.g.
-   :ctrl-d, shown as \"^d\") appear, \"q\" is dropped, and esc cancels."
+   navigation, enter, one per action, quit. When :multi?, space toggles and
+   enter submits. When :filterable?, letter keys type into the query, so only
+   actions bound to non-letter keys (e.g. :ctrl-d, shown as \"^d\") appear,
+   \"q\" is dropped, and esc cancels."
   [l]
-  (let [nav [{:key "↑/↓"
-              :label "navigate"}
-             {:key "enter"
-              :label "select"}]]
+  (let [nav (if (:multi? l)
+              [{:key "↑/↓"
+                :label "navigate"}
+               {:key "space"
+                :label "toggle"}
+               {:key "enter"
+                :label "submit"}]
+              [{:key "↑/↓"
+                :label "navigate"}
+               {:key "enter"
+                :label "select"}])]
     (if (:filterable? l)
       (vec (concat nav
                    (action-bindings (filter-fireable (:actions l)))
@@ -201,6 +209,9 @@
                    (action-bindings (:actions l))
                    [{:key "q"
                      :label "quit"}])))))
+
+(def ^:private checked "[x] ")
+(def ^:private unchecked "[ ] ")
 
 (defn- truncate [text max-w]
   ;; Only plain text is truncated: cutting styled text by raw index could
@@ -272,7 +283,9 @@
      (let [marker (:cursor-marker l)
            marker-w (style/visible-width marker)
            blank (apply str (repeat marker-w " "))
-           max-w (when-let [w (:width view-opts)] (- w marker-w))
+           multi? (:multi? l)
+           checkbox-w (if multi? (count checked) 0)
+           max-w (when-let [w (:width view-opts)] (- w marker-w checkbox-w))
            fset (:filtered l)
            budget (item-budget l (:height view-opts))
            ;; A single-row filterable block spends its only row on the query
@@ -287,11 +300,15 @@
            ;; Each row is a position in the match set; map it back to the
            ;; original item, and highlight when the position is the cursor.
            item-rows (map (fn [pos]
-                            (let [item (nth (:items l) (nth fset pos))
-                                  text (truncate ((:item->text l) item) max-w)]
+                            (let [idx (nth fset pos)
+                                  item (nth (:items l) idx)
+                                  text (truncate ((:item->text l) item) max-w)
+                                  box (if multi?
+                                        (if (contains? (:selected l) idx) checked unchecked)
+                                        "")]
                               (if (= pos (:cursor l))
-                                (str marker ((:selected-style l) text))
-                                (str blank text))))
+                                (str marker box ((:selected-style l) text))
+                                (str blank box text))))
                           (range (:start win) (:end win)))
            body (cond
                   (not room?) []
