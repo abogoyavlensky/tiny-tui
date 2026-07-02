@@ -1,5 +1,6 @@
 (ns tiny-tui.core-test
   (:require [clojure.test :refer :all]
+            [string]
             [tiny-tui.confirm :as tconfirm]
             [tiny-tui.core :as tui]
             [tiny-tui.help :as help]
@@ -130,6 +131,85 @@
           :index 2}
          (tui/select (filter-opts ["l" "g" "x" :enter] (atom [])
                                   {:filter-fn (fn [q item] (= q (:name item)))})))))
+
+(def oa-projects [{:name "tiny-cli"} {:name "tiny-tui"} {:name "lgx"}])
+
+(defn del-handler [calls items]
+  ;; caller's (impure) handler: drop the acted-on item, report a status
+  (fn [ev]
+    (swap! calls conj ev)
+    (swap! items (fn [xs] (vec (remove (fn [x] (= x (:item ev))) xs))))
+    {:items @items
+     :status (str "Removed " (:name (:item ev)))}))
+
+(defn oa-opts [script frames items handler actions]
+  {:title "Deps"
+   :items @items
+   :item->text :name
+   :actions actions
+   :on-action handler
+   :read-key-fn (scripted script)
+   :render-fn (fn [s] (swap! frames conj s))
+   :screen false})
+
+(deftest test-on-action-continues-loop-and-updates
+  (let [frames (atom [])
+        calls (atom [])
+        items (atom oa-projects)]
+    ;; delete the current item, then quit — the delete does NOT exit the loop
+    (is (= {:type :cancel}
+           (tui/select (oa-opts ["d" "q"] frames items (del-handler calls items)
+                                [{:id :delete
+                                  :key "d"
+                                  :label "delete"}]))))
+    (is (= 1 (count @calls)))
+    (is (= :delete (:action (first @calls))))
+    (is (= {:name "tiny-cli"} (:item (first @calls))))
+    (is (= [{:name "tiny-tui"} {:name "lgx"}] @items))))
+
+(deftest test-on-action-status-shows-then-clears
+  (let [frames (atom [])
+        calls (atom [])
+        items (atom oa-projects)]
+    (tui/select (oa-opts ["d" :down "q"] frames items (del-handler calls items)
+                         [{:id :delete
+                           :key "d"
+                           :label "delete"}]))
+    ;; the status appears in the frame right after the action ...
+    (is (some (fn [f] (string/includes? f "Removed tiny-cli")) @frames))
+    ;; ... and is gone from the frame rendered after the next key
+    (is (not (string/includes? (last @frames) "Removed tiny-cli")))))
+
+(deftest test-on-action-receives-confirmed-event
+  (let [frames (atom [])
+        calls (atom [])
+        items (atom oa-projects)
+        action {:id :delete
+                :key "d"
+                :label "delete"
+                :destructive? true
+                :confirm-message "Sure?"}]
+    ;; destructive -> confirm popup -> "y" routes the confirmed event to on-action
+    (tui/select (oa-opts ["d" "y" "q"] frames items (del-handler calls items) [action]))
+    (is (= 1 (count @calls)))
+    (is (= true (:confirmed? (first @calls))))
+    (is (= [{:name "tiny-tui"} {:name "lgx"}] @items))))
+
+(deftest test-action-without-handler-still-exits
+  ;; regression: with no :on-action, an action returns and exits as before
+  (is (= {:type :action
+          :action :delete
+          :item {:name "tiny-cli"}
+          :index 0}
+         (tui/select {:title "Deps"
+                      :items oa-projects
+                      :item->text :name
+                      :actions [{:id :delete
+                                 :key "d"
+                                 :label "delete"}]
+                      :read-key-fn (scripted ["d"])
+                      :render-fn (fn [_] nil)
+                      :screen false}))))
 
 (deftest test-select-frame
   (let [frames (atom [])]

@@ -522,3 +522,32 @@
             {:key "esc"
              :label "cancel"}]
            (tlist/bindings l)))))
+
+(deftest test-set-items-replaces-and-clamps-cursor
+  ;; cursor past the new end clamps to the last item
+  (let [l (assoc (tlist/create {:items ["a" "b" "c" "d" "e"]}) :cursor 4)
+        l' (tlist/set-items l ["x" "y" "z"])]
+    (is (= ["x" "y" "z"] (:items l')))
+    (is (= [0 1 2] (:filtered l')))
+    (is (= 2 (:cursor l')))))
+
+(deftest test-set-items-preserves-in-range-cursor
+  (let [l (assoc (tlist/create {:items ["a" "b" "c" "d" "e"]}) :cursor 1)
+        l' (tlist/set-items l ["p" "q" "r" "s"])]
+    (is (= 1 (:cursor l')))))
+
+(deftest test-set-items-reapplies-filter-query
+  ;; a filterable list with query "b" over new items keeps only matches
+  (let [l (assoc (tlist/create {:items fruits
+                                :filterable? true}) :query "b")
+        l' (tlist/set-items l ["blueberry" "cherry" "banana"])]
+    ;; "b" matches blueberry(0) and banana(2)
+    (is (= [0 2] (:filtered l')))
+    (is (= "blueberry" (tlist/selected-item l')))))
+
+(deftest test-set-items-empty
+  (let [l (assoc (tlist/create {:items ["a" "b" "c"]}) :cursor 2)
+        l' (tlist/set-items l [])]
+    (is (= [] (:filtered l')))
+    (is (= 0 (:cursor l')))
+    (is (nil? (tlist/selected-item l')))))

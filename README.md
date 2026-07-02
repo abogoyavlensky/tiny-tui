@@ -58,6 +58,22 @@ cancels.
              :item->text :name :filterable? true})
 ```
 
+Stay in the loop with `:on-action`. Normally an action returns and exits;
+with a handler, it updates the list in place and keeps browsing. The handler
+receives the (confirmed) action event and returns `{:items new-items :status
+"..."}` — the items replace the list (cursor and filter preserved) and the
+status shows until the next keypress. Enter and esc still exit. The list
+widget stays pure; the handler is your code:
+
+```clojure
+(let [deps (atom initial-deps)]
+  (tui/select {:title "Dependencies" :items @deps :item->text :name
+               :actions [{:id :remove :key "d" :label "remove" :destructive? true}]
+               :on-action (fn [ev]
+                            (swap! deps remove-item (:item ev))
+                            {:items @deps :status (str "Removed " (:name (:item ev)))})}))
+```
+
 Ask a yes/no question:
 
 ```clojure
@@ -138,6 +154,7 @@ lgx run examples/counter.lg         # interactive counter
 lgx run examples/select_project.lg  # tui/select
 lgx run examples/viewport_select.lg # long list with a scroll window
 lgx run examples/filter_select.lg   # type-to-filter select
+lgx run examples/deps_manager.lg    # delete-in-place with :on-action
 lgx run examples/inline_select.lg   # tui/select, inline (no alternate screen)
 lgx run examples/confirm_delete.lg  # tui/confirm
 lgx run examples/input_name.lg      # tui/input with validation
