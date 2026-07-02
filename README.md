@@ -45,6 +45,17 @@ Add actions on the selected item. An action marked `:destructive?` (or
 Long lists scroll to a window sized to the terminal, keeping the selection
 in view with a dim `12/50` position indicator — no configuration needed.
 
+Set `:filterable? true` to let the user type to narrow the list (fzf style):
+matching is case-insensitive substring on the item text, or pass `:filter-fn
+(fn [query item] boolean)` for custom matching. Arrows navigate the matches
+and enter selects. While filtering, letter keys type into the query — so
+they don't double as action keys, and only esc cancels.
+
+```clojure
+(tui/select {:title "Checkout branch" :items branches
+             :item->text :name :filterable? true})
+```
+
 Ask a yes/no question:
 
 ```clojure
@@ -124,6 +135,7 @@ lgx run examples/static_screen.lg   # styled static screen
 lgx run examples/counter.lg         # interactive counter
 lgx run examples/select_project.lg  # tui/select
 lgx run examples/viewport_select.lg # long list with a scroll window
+lgx run examples/filter_select.lg   # type-to-filter select
 lgx run examples/inline_select.lg   # tui/select, inline (no alternate screen)
 lgx run examples/confirm_delete.lg  # tui/confirm
 lgx run examples/input_name.lg      # tui/input with validation
