@@ -271,3 +271,45 @@
 (deftest test-view-empty-with-height
   (is (= "No items."
          (tlist/view (tlist/create {:items []}) {:height 5}))))
+
+(def fruits ["Apple" "banana" "Cherry" "apricot" "Blueberry"])
+
+(defn make-filterable [extra]
+  (tlist/create (merge {:items fruits
+                        :filterable? true} extra)))
+
+(deftest test-create-filterable-defaults
+  (let [l (make-filterable {})]
+    (is (= true (:filterable? l)))
+    (is (= "" (:query l)))
+    (is (= [0 1 2 3 4] (:filtered l)))))
+
+(deftest test-create-non-filterable-has-identity-filtered
+  (let [l (tlist/create {:items fruits})]
+    (is (= [0 1 2 3 4] (:filtered l)))))
+
+(deftest test-refilter-substring-case-insensitive
+  ;; "ap" matches "Apple" (0) and "apricot" (3)
+  (let [l (tlist/refilter (assoc (make-filterable {}) :query "ap"))]
+    (is (= [0 3] (:filtered l))))
+  ;; "rr" matches "Cherry" (2) and "Blueberry" (4)
+  (let [l (tlist/refilter (assoc (make-filterable {}) :query "rr"))]
+    (is (= [2 4] (:filtered l)))))
+
+(deftest test-refilter-resets-cursor-and-offset
+  (let [l (tlist/refilter (assoc (make-filterable {}) :query "b" :cursor 3 :offset 2))]
+    ;; "b" matches banana (1) and Blueberry (4)
+    (is (= [1 4] (:filtered l)))
+    (is (= 0 (:cursor l)))
+    (is (= 0 (:offset l)))))
+
+(deftest test-refilter-empty-query-matches-all
+  (let [l (tlist/refilter (assoc (make-filterable {}) :query ""))]
+    (is (= [0 1 2 3 4] (:filtered l)))))
+
+(deftest test-refilter-custom-filter-fn
+  ;; prefix match instead of substring: "a" starts only "Apple"/"apricot"
+  (let [prefix (fn [q item] (string/starts-with? (string/lower-case item)
+                                                 (string/lower-case q)))
+        l (tlist/refilter (assoc (make-filterable {:filter-fn prefix}) :query "a"))]
+    (is (= [0 3] (:filtered l)))))

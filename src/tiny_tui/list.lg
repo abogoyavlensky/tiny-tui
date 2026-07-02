@@ -8,16 +8,44 @@
 (defn create
   "opts: {:items [...] :item->text fn :empty-text \"...\"
           :actions [{:id :delete :key \"d\" :label \"delete\"
-                     :destructive? true} ...]}"
+                     :destructive? true} ...]
+          :filterable? bool :filter-fn (fn [query item] bool)}
+   With :filterable? the user types to narrow the list; :filter-fn overrides
+   the default case-insensitive substring match on the item's text."
   [opts]
-  {:items (vec (:items opts))
-   :item->text (or (:item->text opts) str)
-   :empty-text (or (:empty-text opts) "No items.")
-   :actions (vec (:actions opts))
-   :cursor-marker (or (:cursor-marker opts) "› ")
-   :selected-style (or (:selected-style opts) style/inverse)
-   :cursor 0
-   :offset 0})
+  (let [items (vec (:items opts))]
+    {:items items
+     :item->text (or (:item->text opts) str)
+     :empty-text (or (:empty-text opts) "No items.")
+     :actions (vec (:actions opts))
+     :cursor-marker (or (:cursor-marker opts) "› ")
+     :selected-style (or (:selected-style opts) style/inverse)
+     :filterable? (boolean (:filterable? opts))
+     :filter-fn (:filter-fn opts)
+     :query ""
+     ;; Indices into :items currently matching :query. Identity for an empty
+     ;; query (and for non-filterable lists, which never touch it), so every
+     ;; downstream read is unchanged unless filtering is actually in use.
+     :filtered (vec (range (count items)))
+     :cursor 0
+     :offset 0}))
+
+(defn- matches? [l query item]
+  (cond
+    (empty? query) true
+    (:filter-fn l) ((:filter-fn l) query item)
+    :else (string/includes? (string/lower-case ((:item->text l) item))
+                            (string/lower-case query))))
+
+(defn refilter
+  "Recompute :filtered for the current :query and reset the cursor/offset to
+   the top (fzf-style: a new query starts at the first match)."
+  [l]
+  (let [items (:items l)
+        query (:query l)
+        idxs (filter (fn [i] (matches? l query (nth items i)))
+                     (range (count items)))]
+    (assoc l :filtered (vec idxs) :cursor 0 :offset 0)))
 
 (defn selected-index [l]
   (when (seq (:items l))
