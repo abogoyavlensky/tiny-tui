@@ -1,6 +1,8 @@
 # List Viewport Implementation Plan
 
-> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+
+> **Status: ✅ Complete (2026-07-02).** All five tasks implemented, reviewed by codex, and PTY-verified. See the Implementation Summary at the bottom.
 
 **Goal:** Give `tiny-tui.list` a scroll window sized to the terminal, keeping the cursor visible with a dim `"12/200"` position indicator, so long lists no longer break the layout.
 
@@ -75,7 +77,7 @@ Ordering note: `tiny-tui.list` has no top-level forward references — define `w
 - Modify: `src/tiny_tui/list.lg`
 - Test: `test/tiny_tui/list_test.lg`
 
-- [ ] **Step 1: Write failing tests for `window`**
+- [x] **Step 1: Write failing tests for `window`**
   In `list_test.lg`, add tests against `tlist/window` using a helper list of N items (e.g. 50 numbered strings) and a `cursor`/`offset` set directly via `assoc`:
   - `h` nil → `{:start 0 :end n :windowed? false :indicator nil}`.
   - `n <= h` (e.g. 3 items, h 10) → not windowed, whole range, nil indicator.
@@ -84,21 +86,21 @@ Ordering note: `tiny-tui.list` has no top-level forward references — define `w
   - cursor above offset (e.g. cursor 5, offset 30, h 10) → `start 5`.
   - `h 1` → windowed, `body 1`, one item, `indicator nil`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — `tlist/window` unresolved.
 
-- [ ] **Step 3: Implement `window` and `reconcile-offset`**
+- [x] **Step 3: Implement `window` and `reconcile-offset`**
   Add pure `window [l h]` per the rule in the Design, returning `{:start :end :windowed? :indicator}`. Add `reconcile-offset [l h]` = `(assoc l :offset (:start (window l h)))`. Add `:offset 0` to the map returned by `create`. Docstring `window` with the sticky invariant. Define `window` before `reconcile-offset`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS (all suites, including untouched existing list tests).
 
-- [ ] **Step 5: Add `reconcile-offset` tests**
+- [x] **Step 5: Add `reconcile-offset` tests**
   Assert `reconcile-offset` persists `:offset` equal to `(:start (window ...))` for a windowed case and for `h` nil (offset 0). Run: `lgx test` → PASS.
 
-- [ ] **Step 6: Format and commit**
+- [x] **Step 6: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(list): add pure viewport window + offset reconcile"`
 
@@ -110,7 +112,7 @@ Ordering note: `tiny-tui.list` has no top-level forward references — define `w
 - Modify: `src/tiny_tui/list.lg`
 - Test: `test/tiny_tui/list_test.lg`
 
-- [ ] **Step 1: Write failing tests for windowed `view`**
+- [x] **Step 1: Write failing tests for windowed `view`**
   Add `view` tests with `:height`:
   - list of 5 items, `:height 3` → renders items `[start..end)` per `window` (cursor 0 → first 2 items + a third? recall body = h-1 = 2 when windowed) with the dim indicator line `(style/dim "1/5")` appended as the last line. Assert exact string via `string/join "\n"` including marker/`style/inverse` on the cursor row and blanks on others.
   - after moving the cursor down enough to scroll, the rendered slice shifts and the indicator updates (build the list via `reconcile-offset` to mimic what core does, since `view` reads `:offset`).
@@ -118,18 +120,18 @@ Ordering note: `tiny-tui.list` has no top-level forward references — define `w
   - `:height 1` → single item row, no indicator.
   - empty list with `:height` → still the empty-text string.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — `view` ignores `:height` / no indicator yet.
 
-- [ ] **Step 3: Implement windowed `view`**
+- [x] **Step 3: Implement windowed `view`**
   In `view`, compute `(window l (:height view-opts))`. Render only items `start..end`, keeping absolute index `i` for the cursor comparison and selected-style (iterate the subvector with an index base of `start`). When `:indicator` is present, append `(style/dim indicator)` as a trailing line. Preserve existing marker/blank/truncation logic and the empty-list path. `nil` height ⇒ `window` returns the full range ⇒ unchanged output.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(list): render only the visible window with a position indicator"`
 
@@ -141,14 +143,14 @@ Ordering note: `tiny-tui.list` has no top-level forward references — define `w
 - Modify: `src/tiny_tui/core.lg`
 - Test: `test/tiny_tui/core_test.lg` (existing headless tests must stay green)
 
-- [ ] **Step 1: Add `list-height` and thread `:height`**
+- [x] **Step 1: Add `list-height` and thread `:height`**
   Add private `list-height [opts state]` = `(max 1 (- (second (:tui/size state)) (if (:title opts) 4 2)))`. In `select-view` (list mode), pass `:height (list-height opts state)` alongside `:width` to `tlist/view`. In `select-update`, after `tlist/update`, replace the updated list with `(tlist/reconcile-offset <updated-list> (list-height opts state))` before assoc-ing it back into `state` — so the persisted offset stays in sync with the terminal height. Confirm mode and the action/confirm branches keep working (offset lives in list state and survives the round-trip).
 
-- [ ] **Step 2: Run the full suite**
+- [x] **Step 2: Run the full suite**
   Run: `lgx test`
   Expected: PASS — headless tests inject `[80 24]`, so `list-height` is large and lists still render fully; existing behavior is unchanged.
 
-- [ ] **Step 3: Format and commit**
+- [x] **Step 3: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(core): size the list viewport to the terminal in select"`
 
@@ -160,19 +162,19 @@ Ordering note: `tiny-tui.list` has no top-level forward references — define `w
 - Create: `examples/viewport_select.lg`
 - Modify: `README.md`, `docs/ROADMAP.md`
 
-- [ ] **Step 1: Write `examples/viewport_select.lg`**
+- [x] **Step 1: Write `examples/viewport_select.lg`**
   Model on `examples/select_project.lg`: build ~50 items (e.g. `(map (fn [i] {:id i :name (str "branch-" i)}) (range 1 51))`), call `tui/select` with a `:title`, `:item->text :name`, then `println` the result. Include the `(when-not *compiling-aot* (-main))` guard and a short header comment. Keep it full-screen (the default) so the scroll window is obvious.
 
-- [ ] **Step 2: Document in `README.md`**
+- [x] **Step 2: Document in `README.md`**
   Add a short note (near the list/`select` description) that long lists scroll to a window sized to the terminal, keeping the selection visible, with a dim position indicator. Use /writing-clearly.
 
-- [ ] **Step 3: Update `docs/ROADMAP.md`**
+- [x] **Step 3: Update `docs/ROADMAP.md`**
   Mark item 2 (viewport) as **Delivered**, pointing at this plan, noting the sticky-offset-in-`core` approach.
 
-- [ ] **Step 4: Add the example to the README examples list**
+- [x] **Step 4: Add the example to the README examples list**
   Add `lgx run examples/viewport_select.lg   # long list with a scroll window` to the examples block.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -am "docs: add viewport example and document list scrolling"`
 
 ---
@@ -183,26 +185,26 @@ Ordering note: `tiny-tui.list` has no top-level forward references — define `w
 
 Follow `docs/pty-verification.md`. The `script` pty reports `[0 0]` → core falls back to 24 rows, so a 50-item list must window.
 
-- [ ] **Step 1: Initial frame shows a window, not all 50**
+- [x] **Step 1: Initial frame shows a window, not all 50**
   Run: `printf 'q' | timeout 15 script -qec "lgx run examples/viewport_select.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r' | grep -c "branch-"`
   Expected: fewer than 50 (roughly `24 - chrome - 1`); definitely not 50. Also visually confirm `1/50` appears (grep for `/50`).
 
-- [ ] **Step 2: Indicator present and dim**
+- [x] **Step 2: Indicator present and dim**
   Run: `printf 'q' | timeout 15 script -qec "lgx run examples/viewport_select.lg" /dev/null | grep -a "$(printf '\033')\[2m"`
   Expected: at least one dim (`ESC[2m`) run, and the stripped output contains `1/50`.
 
-- [ ] **Step 3: Scrolling down moves the window and updates the indicator**
+- [x] **Step 3: Scrolling down moves the window and updates the indicator**
   Run (25 downs then quit): `printf '%.0s\033[B' $(seq 1 25) | { cat; printf 'q'; } | timeout 15 script -qec "lgx run examples/viewport_select.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r' | grep -oE "[0-9]+/50" | tail -3`
   Expected: the indicator's final value reflects a scrolled position (e.g. `26/50`), and earlier frames show smaller numbers — the window advanced. (If constructing the repeated-down byte string is awkward, use `printf '\033[B\033[B…q'` with 25 explicit sequences.)
 
-- [ ] **Step 4: Enter selects the item under the (scrolled) cursor**
+- [x] **Step 4: Enter selects the item under the (scrolled) cursor**
   Drive several downs then `\r`, and assert the printed `Selected` line names the branch matching the indicator position — confirms cursor/selection stays correct while scrolled.
 
-- [ ] **Step 5: Cancel path**
+- [x] **Step 5: Cancel path**
   Run: `printf 'q' | timeout 15 script -qec "lgx run examples/viewport_select.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r' | tail -2`
   Expected: the example's cancel branch prints; terminal restored (no leftover raw-mode artifacts).
 
-- [ ] **Step 6: Record results**
+- [x] **Step 6: Record results**
   If everything passes, note it. If any check fails, fix in the relevant earlier task and re-run. No commit needed for a pass-only run.
 
 ---
@@ -213,3 +215,27 @@ Follow `docs/pty-verification.md`. The `script` pty reports `[0 0]` → core fal
 - `lgx fmt` leaves the tree clean.
 - A 50-item `tui/select` renders a scrolling window with a dim `k/50` indicator on a real (pty) terminal; the cursor stays visible while scrolling and selection is correct.
 - README and `docs/ROADMAP.md` reflect the delivered viewport.
+
+---
+
+## Implementation Summary (2026-07-02)
+
+Delivered on branch `viewport` across four commits (Task 5 was verification-only with no diff):
+
+- `feat(list): add pure viewport window + offset reconcile`
+- `feat(list): render only the visible window with a position indicator`
+- `feat(core): size the list viewport to the terminal in select`
+- `docs: add viewport example and document list scrolling`
+
+**What shipped:** `tiny-tui.list/window` computes a sticky, fzf-style visible slice from `cursor`, a persisted `:offset`, and a height budget; `reconcile-offset` persists the offset. `list/view` renders only that slice (absolute indices preserved for the cursor row) and appends a dim `"cursor/total"` indicator when windowed. `core` sizes the budget to the terminal (`rows − chrome`, clamped ≥ 1), passes `:height` to the list, and reconciles the offset after each `list/update`. Widgets stay pure; a list with no height budget renders in full, so all pre-existing tests were untouched. 76 unit tests pass (12 new). Each task cleared a `review-with-codex` checkpoint.
+
+**PTY verification (`examples/viewport_select.lg`, 50 items, on a 24-row pty):**
+- First frame renders 19 rows (24 − 4 chrome − 1 indicator), not 50, with a `1/50` indicator.
+- The indicator is dim (`ESC[2m1/50ESC[0m`).
+- 25 down-arrows advance the indicator `1/50` → `26/50` across 26 frames — the window scrolls.
+- Enter after 25 downs selects `branch-26`, matching the `26/50` position — selection stays correct while scrolled.
+- `q` cancels cleanly: `Cancelled.` prints, alternate screen left once, cursor restored once.
+
+**Issues / notes:**
+- **The one substantive codex finding was the "not-yet-wired" gap after Task 2** — `select` didn't pass `:height` or reconcile offsets yet. That was Task 3 by design (the plan sequences the wiring after the rendering), and Task 3 resolved it; the final codex pass on the core wiring was clean.
+- **No new gotchas.** The sticky-offset-in-`core` approach behaved exactly as designed; the reconcile-after-update call keeps the persisted offset in sync with the live terminal height, and the pty's `[0 0]`→`[80 24]` fallback made the windowing directly observable.
