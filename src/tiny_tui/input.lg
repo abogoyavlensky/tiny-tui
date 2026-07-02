@@ -1,0 +1,65 @@
+;; tiny-tui.input — a pure single-line text input widget. State in,
+;; [state event] out, string view. No terminal access; the caller (run)
+;; owns I/O.
+;;
+;; Unlike list/confirm, printable keys — including "q" — are inserted as
+;; text; only :esc cancels. Enter runs an optional :validate fn: a non-nil
+;; result is shown as an inline error and blocks submit; nil submits.
+
+(ns tiny-tui.input
+  (:require [tiny-tui.layout :as layout]
+            [tiny-tui.style :as style]))
+
+(defn create
+  "opts: {:title \"...\" :placeholder \"...\" :value \"initial\"
+          :validate (fn [text] error-string-or-nil)}
+   The cursor starts at the end of any initial :value."
+  [opts]
+  (let [text (or (:value opts) "")]
+    {:text text
+     :cursor (count text)
+     :placeholder (:placeholder opts)
+     :validate (:validate opts)
+     :error nil}))
+
+(defn- insert [s ins]
+  (let [{:keys [text cursor]} s]
+    (assoc s
+           :text (str (subs text 0 cursor) ins (subs text cursor))
+           :cursor (+ cursor (count ins))
+           :error nil)))
+
+(defn- backspace [s]
+  (let [{:keys [text cursor]} s]
+    (if (pos? cursor)
+      (assoc s
+             :text (str (subs text 0 (dec cursor)) (subs text cursor))
+             :cursor (dec cursor)
+             :error nil)
+      (assoc s :error nil))))
+
+(defn- delete-forward [s]
+  (let [{:keys [text cursor]} s]
+    (if (< cursor (count text))
+      (assoc s
+             :text (str (subs text 0 cursor) (subs text (inc cursor)))
+             :error nil)
+      (assoc s :error nil))))
+
+(defn- move [s cursor]
+  (assoc s :cursor (max 0 (min (count (:text s)) cursor)) :error nil))
+
+(defn update
+  "Returns [new-state event]. Printable strings insert at the cursor;
+   :backspace/:delete edit; :left/:right/:home/:end move. :enter and :esc
+   are handled in a later stage. Editing and motion emit no event."
+  [s msg]
+  (cond
+    (string? msg) [(insert s msg) nil]
+    (= msg :backspace) [(backspace s) nil]
+    (= msg :delete) [(delete-forward s) nil]
+    (= msg :left) [(move s (dec (:cursor s))) nil]
+    (= msg :right) [(move s (inc (:cursor s))) nil]
+    (= msg :home) [(move s 0) nil]
+    (= msg :end) [(move s (count (:text s))) nil]
+    :else [s nil]))
