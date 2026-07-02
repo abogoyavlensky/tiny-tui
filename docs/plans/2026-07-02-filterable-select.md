@@ -1,6 +1,8 @@
 # Filterable Select Implementation Plan
 
-> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+
+> **Status: ✅ Complete (2026-07-02).** All six tasks implemented, reviewed by codex (two edge-case fixes folded in), and PTY-verified. See the Implementation Summary at the bottom.
 
 **Goal:** Add `:filterable? true` to the list/select: typing narrows the list, arrows navigate the matches, enter selects — the fzf interaction, composed from the existing list + viewport.
 
@@ -89,24 +91,24 @@ Ordering note: define `matches?`/`refilter` before `create` uses `refilter`, or 
 - Modify: `src/tiny_tui/list.lg`
 - Test: `test/tiny_tui/list_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   In `list_test.lg`, add tests for the filter primitives (require `tiny-tui.list`):
   - `create` with `:filterable? true` seeds `:query ""`, `:filtered` = all indices `[0..n)`; without it, `:filtered` still = `[0..n)`.
   - `matches?`-driven `refilter`: a helper list of named items; set `:query` then `refilter`; assert `:filtered` holds the original indices of the substring matches (case-insensitive), and `:cursor`/`:offset` reset to 0.
   - custom `:filter-fn` (e.g. prefix match) is used instead of the default.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — new vars/fields absent.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add `:filterable? (boolean (:filterable? opts))`, `:query ""`, `:filter-fn (:filter-fn opts)`, and `:filtered (vec (range (count items)))` to `create`. Add private `matches? [l query item]` and `refilter [l]` (recompute `:filtered` from matching original indices; reset cursor/offset). Use `string/lower-case`/`string/includes?` for the default. Have `create` produce the identity `:filtered` (query empty) directly.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS (all suites, existing list tests untouched).
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(list): add filter matching and refilter core"`
 
@@ -118,7 +120,7 @@ Ordering note: define `matches?`/`refilter` before `create` uses `refilter`, or 
 - Modify: `src/tiny_tui/list.lg`
 - Test: `test/tiny_tui/list_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - typing narrows: on a filterable list, `update` with printable chars sets `:query` and shrinks `:filtered`; `"q"` types (no cancel event).
   - `:backspace` widens the query.
   - `:enter` after narrowing returns `{:type :select :item <match> :index <original-index>}` (assert the index is into the original items, not the filtered position).
@@ -127,18 +129,18 @@ Ordering note: define `matches?`/`refilter` before `create` uses `refilter`, or 
   - no-match: after a query with zero matches, `selected-item`/`selected-index` are nil and `:enter` yields no event.
   - non-filterable list: `"q"` still cancels, action keys still fire (existing behavior intact).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Update `selected-index`/`selected-item` to map the cursor through `:filtered` (guard on `(seq (:filtered l))`). Update `move` to clamp against `(count (:filtered l))`, and `select-event`/`action-event` to use the mapped item/index and guard on `:filtered`. Branch `update` on `:filterable?` per the Design (printables → query, backspace, up/down/enter/esc). Leave the non-filterable branch as the current code.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(list): narrow on typing, select the matched item"`
 
@@ -150,25 +152,25 @@ Ordering note: define `matches?`/`refilter` before `create` uses `refilter`, or 
 - Modify: `src/tiny_tui/list.lg`
 - Test: `test/tiny_tui/list_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   - `window`/viewport operate on the filtered count: narrow a 50-item list to a handful, assert the window/indicator reflect the match count.
   - `view` with `:filterable? true`: query line `(str "> " query (style/inverse " "))` first, then the matched rows (cursor row inverted), then indicator when windowed; assert exact strings.
   - `view` no-match → query line + dim `"No matches"`.
   - `bindings` when filterable → navigate / enter select / esc cancel (no `q`, no actions).
   - a non-filterable `view` snapshot is unchanged (regression guard).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Change `window` to read `(count (:filtered l))`. Add private `item-budget [l h]`. Have `view` and `reconcile-offset` call `window` with `(item-budget l h)`. In `view`, prepend the query line when filterable, render the filtered slice (compare filtered position to `:cursor`, render `(nth items (nth filtered pos))`), show dim `"No matches"` when empty-and-filterable, append the indicator. Make `bindings` filter-aware. Keep the non-filterable output identical.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(list): render the filter query line, matches, and adaptive help"`
 
@@ -180,24 +182,24 @@ Ordering note: define `matches?`/`refilter` before `create` uses `refilter`, or 
 - Modify: `src/tiny_tui/core.lg`
 - Test: `test/tiny_tui/core_test.lg`
 
-- [ ] **Step 1: Write failing headless tests**
+- [x] **Step 1: Write failing headless tests**
   In `core_test.lg`, add `tui/select` filterable flows (scripted keys, `:screen false`):
   - `{:filterable? true …}` + typing that narrows to one item + `:enter` → returns that item with its original `:index`.
   - a `:filter-fn` case.
   - `"q"` types (does not cancel) while filterable.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL (or reveal a wiring gap).
 
-- [ ] **Step 3: Implement / confirm wiring**
+- [x] **Step 3: Implement / confirm wiring**
   `select` should already pass `:filterable?`/`:filter-fn` through `(tlist/create opts)` and render adaptive `bindings` — confirm and, if a gap exists, close it minimally. Add a docstring note to `select` listing `:filterable?` and `:filter-fn`.
 
-- [ ] **Step 4: Run the full suite**
+- [x] **Step 4: Run the full suite**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -am "feat(core): document and cover filterable select"`
 
@@ -209,16 +211,16 @@ Ordering note: define `matches?`/`refilter` before `create` uses `refilter`, or 
 - Create: `examples/filter_select.lg`
 - Modify: `README.md`, `docs/ROADMAP.md`
 
-- [ ] **Step 1: Write `examples/filter_select.lg`**
+- [x] **Step 1: Write `examples/filter_select.lg`**
   Model on `examples/viewport_select.lg`: ~50 named items, `tui/select` with `:title`, `:item->text :name`, `:filterable? true`; `println` the result or a cancel message. Include the `(when-not *compiling-aot* (-main))` guard and a short header comment.
 
-- [ ] **Step 2: Document in `README.md`**
+- [x] **Step 2: Document in `README.md`**
   Add a short note near `select`: `:filterable? true` lets the user type to narrow the list (case-insensitive substring; `:filter-fn` to override), arrows navigate matches, enter selects. Note that while filtering, letter keys type (so letter `:actions` don't apply). Add `lgx run examples/filter_select.lg   # type-to-filter select` to the examples list. Use /writing-clearly.
 
-- [ ] **Step 3: Update `docs/ROADMAP.md`**
+- [x] **Step 3: Update `docs/ROADMAP.md`**
   Mark item 3 (filtering in select) **Delivered**, pointing at this plan; note substring default, `:filter-fn` override, filtering lives in the list widget, composes with the viewport.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   `git commit -am "docs: add filter example and document :filterable? select"`
 
 ---
@@ -229,27 +231,27 @@ Ordering note: define `matches?`/`refilter` before `create` uses `refilter`, or 
 
 Follow `docs/pty-verification.md`. The `script` pty falls back to 24 rows.
 
-- [ ] **Step 1: Typing narrows the list**
+- [x] **Step 1: Typing narrows the list**
   Run: `printf 'branch-1\r' | timeout 15 script -qec "lgx run examples/filter_select.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r' | tail -3`
   Expected: the result names a `branch-1…` item (the query narrowed and enter selected the top match).
 
-- [ ] **Step 2: Query line renders with the caret**
+- [x] **Step 2: Query line renders with the caret**
   Run: `printf 'bra' | timeout 15 script -qec "lgx run examples/filter_select.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r' | grep -a "> bra"`
   Expected: a `> bra` prompt line is present. (No trailing key, so it stays open until timeout — acceptable, we only inspect the frame.)
 
-- [ ] **Step 3: `q` types instead of quitting**
+- [x] **Step 3: `q` types instead of quitting**
   Run: `printf 'q\033' | timeout 15 script -qec "lgx run examples/filter_select.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r' | grep -a "> q"`
   Expected: a `> q` prompt line appears (the `q` was typed into the query), and the following esc cancels cleanly.
 
-- [ ] **Step 4: No-match state**
+- [x] **Step 4: No-match state**
   Run: `printf 'zzzzz' | timeout 15 script -qec "lgx run examples/filter_select.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r' | grep -a "No matches"`
   Expected: `No matches` shows.
 
-- [ ] **Step 5: Cancel path**
+- [x] **Step 5: Cancel path**
   Run: `printf '\033' | timeout 15 script -qec "lgx run examples/filter_select.lg" /dev/null | sed -e "s/$(printf '\033')\[[0-9;?]*[a-zA-Z]//g" | tr -d '\r' | tail -2`
   Expected: the cancel branch prints; terminal restored (check `ESC[?25h`, `ESC[?1049l` present without stripping).
 
-- [ ] **Step 6: Record results**
+- [x] **Step 6: Record results**
   Note the outcome. Fix-and-re-run on any failure. No commit needed for a pass-only run.
 
 ---
@@ -260,3 +262,25 @@ Follow `docs/pty-verification.md`. The `script` pty falls back to 24 rows.
 - `lgx fmt` leaves the tree clean.
 - On a real (pty) terminal, `tui/select {:filterable? true}` narrows as you type, shows a `> query` line, selects the highlighted match, types `q` rather than quitting, shows `No matches`, and cancels cleanly on esc.
 - README and `docs/ROADMAP.md` reflect the delivered filtering.
+
+---
+
+## Implementation Summary (2026-07-02)
+
+Delivered on branch `filterable-select` across five commits (Task 6 was verification-only with no diff):
+
+- `feat(list): add filter matching and refilter core`
+- `feat(list): narrow on typing, select the matched item`
+- `feat(list): render the filter query line, matches, and adaptive help`
+- `feat(core): document and cover filterable select`
+- `docs: add filter example and document :filterable? select`
+
+**What shipped:** `:filterable? true` on the list/select. Filtering lives entirely in `tiny-tui.list` via a `:filtered` vector of original indices; `create` seeds it to identity, so every read (`selected-*`, `move`, `window`, `view`) goes through it unchanged for non-filterable lists. Typing builds `:query` and `refilter`s (cursor/offset reset to top, fzf-style); `"q"` types rather than quits; only esc cancels; letter `:actions` are shadowed while filtering. Matching is case-insensitive substring by default (`string/lower-case` + `string/includes?`), overridable with `:filter-fn`. `view` renders a `> query▮` line (static inverse caret) above the windowed matches, a dim `No matches` when narrowed to zero, and the viewport indicator counts matches. `bindings` adapts (navigate / select / esc cancel). **`core/select` needed no logic change** — the design's central bet: opts flow through `tlist/create` and the help line adapts, so the three headless `select` filter tests passed the moment they were written. 124 unit + headless tests pass (24 new).
+
+**PTY verification (`examples/filter_select.lg`, 50 items):** typing `branch-42` + enter selects it; `> bra` query line renders; `q` types (`> q`) instead of quitting; `zzzzz` shows `No matches`; esc prints `Cancelled.` with the terminal restored (`ESC[?25h`, `ESC[?1049l`).
+
+**Issues / notes:**
+- **Two codex edge-case findings, both fixed** (folded into Task 3): (1) a single-row filterable block (`:height 1`) spends its only row on the query line, so `item-budget` now yields 0 (not clamped to 1) and `view` renders no item rows — and, on re-review, the `No matches` line is gated by the same room check so it can't overflow a one-row block either; (2) a genuinely empty `:items` list honors `:empty-text` rather than showing `No matches` — `No matches` is reserved for a non-empty list narrowed to zero. Each fix got a locking test and a clean re-review.
+- **The plan's `item-budget` sketch used `(max 1 (dec h))`; the shipped version drops the clamp** (`(when h (dec h))`) precisely to make the height-1 case correct — a small but deliberate deviation caught by review.
+- **Codex's Task 1/Task 2 "not-wired-yet" notes were expected** — the plan sequences the render/selection wiring after the filter core; the final passes were clean.
+- **Known limitation (documented):** `:filterable?` and letter-key `:actions` don't combine (typing owns the keyboard).
