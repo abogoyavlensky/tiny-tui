@@ -1,0 +1,28 @@
+;; Multi-select demo: space toggles a checkbox, enter submits the set.
+;;
+;; tui/multi-select returns the vector of chosen items (in list order), nil on
+;; cancel (esc/Ctrl-C), or [] if you submit without checking anything.
+;;
+;; Run from the repo root: lgx run examples/multi_select.lg
+
+(ns examples.multi-select
+  (:require [tiny-tui.core :as tui]))
+
+(def files
+  [{:name "src/core.lg"}
+   {:name "src/list.lg"}
+   {:name "test/list_test.lg"}
+   {:name "README.md"}
+   {:name "docs/ROADMAP.md"}])
+
+(defn -main []
+  (let [chosen (tui/multi-select {:title "Stage files (space to toggle)"
+                                  :items files
+                                  :item->text :name})]
+    (cond
+      (nil? chosen) (println "Cancelled.")
+      (empty? chosen) (println "Nothing staged.")
+      :else (do (println "Staged" (count chosen) "file(s):")
+                (doseq [f chosen] (println "  " (:name f)))))))
+
+(when-not *compiling-aot* (-main))

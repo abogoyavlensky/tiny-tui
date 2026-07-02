@@ -74,6 +74,15 @@ widget stays pure; the handler is your code:
                             {:items @deps :status (str "Removed " (:name (:item ev)))})}))
 ```
 
+Pick several with `tui/multi-select` — space toggles a checkbox, enter
+submits. It returns the chosen items in list order (`nil` on cancel, `[]` on
+an empty submit) and composes with `:filterable?`:
+
+```clojure
+(tui/multi-select {:title "Stage files" :items files :item->text :name})
+;; => [{...} {...}]   the checked items
+```
+
 Ask a yes/no question:
 
 ```clojure
@@ -155,6 +164,7 @@ lgx run examples/select_project.lg  # tui/select
 lgx run examples/viewport_select.lg # long list with a scroll window
 lgx run examples/filter_select.lg   # type-to-filter select
 lgx run examples/deps_manager.lg    # delete-in-place with :on-action
+lgx run examples/multi_select.lg    # multi-select with checkboxes
 lgx run examples/inline_select.lg   # tui/select, inline (no alternate screen)
 lgx run examples/confirm_delete.lg  # tui/confirm
 lgx run examples/input_name.lg      # tui/input with validation
