@@ -1,0 +1,106 @@
+;; tiny-tui.input — a pure single-line text input widget. State in,
+;; [state event] out, string view. No terminal access; the caller (run)
+;; owns I/O.
+;;
+;; Unlike list/confirm, printable keys — including "q" — are inserted as
+;; text; only :esc cancels. Enter runs an optional :validate fn: a non-nil
+;; result is shown as an inline error and blocks submit; nil submits.
+
+(ns tiny-tui.input
+  (:require [tiny-tui.layout :as layout]
+            [tiny-tui.style :as style]))
+
+(defn create
+  "opts: {:title \"...\" :placeholder \"...\" :value \"initial\"
+          :validate (fn [text] error-string-or-nil)}
+   The cursor starts at the end of any initial :value."
+  [opts]
+  (let [text (or (:value opts) "")]
+    {:title (:title opts)
+     :text text
+     :cursor (count text)
+     :placeholder (:placeholder opts)
+     :validate (:validate opts)
+     :error nil}))
+
+(defn- insert [s ins]
+  (let [{:keys [text cursor]} s]
+    (assoc s
+           :text (str (subs text 0 cursor) ins (subs text cursor))
+           :cursor (+ cursor (count ins))
+           :error nil)))
+
+(defn- backspace [s]
+  (let [{:keys [text cursor]} s]
+    (if (pos? cursor)
+      (assoc s
+             :text (str (subs text 0 (dec cursor)) (subs text cursor))
+             :cursor (dec cursor)
+             :error nil)
+      (assoc s :error nil))))
+
+(defn- delete-forward [s]
+  (let [{:keys [text cursor]} s]
+    (if (< cursor (count text))
+      (assoc s
+             :text (str (subs text 0 cursor) (subs text (inc cursor)))
+             :error nil)
+      (assoc s :error nil))))
+
+(defn- move [s cursor]
+  (assoc s :cursor (max 0 (min (count (:text s)) cursor)) :error nil))
+
+(defn- submit [s]
+  ;; Run :validate (when set) on the current text. A non-nil result blocks
+  ;; submit and becomes the inline error; nil emits the :submit event.
+  (let [error (when-let [v (:validate s)] (v (:text s)))]
+    (if error
+      [(assoc s :error error) nil]
+      [s {:type :submit
+          :text (:text s)}])))
+
+(defn update
+  "Returns [new-state event]. Printable strings insert at the cursor;
+   :backspace/:delete edit; :left/:right/:home/:end move; :enter submits
+   (subject to :validate); :esc cancels. Editing and motion emit no event."
+  [s msg]
+  (cond
+    (string? msg) [(insert s msg) nil]
+    (= msg :backspace) [(backspace s) nil]
+    (= msg :delete) [(delete-forward s) nil]
+    (= msg :left) [(move s (dec (:cursor s))) nil]
+    (= msg :right) [(move s (inc (:cursor s))) nil]
+    (= msg :home) [(move s 0) nil]
+    (= msg :end) [(move s (count (:text s))) nil]
+    (= msg :enter) (submit s)
+    (= msg :esc) [s {:type :cancel}]
+    :else [s nil]))
+
+(defn- field-str [s]
+  ;; Draw our own caret as a static inverse-video block, since the run loop
+  ;; keeps the real terminal cursor hidden. This is intentional: it does not
+  ;; blink (using the real cursor would, but that means threading caret
+  ;; coordinates out to the renderer — out of scope for this pure widget).
+  ;; Empty text shows the dim placeholder behind a leading cursor block;
+  ;; otherwise the char under the cursor is inverted, with a trailing inverse
+  ;; space when the cursor is at the end.
+  (let [text (:text s)
+        cursor (:cursor s)
+        len (count text)]
+    (if (zero? len)
+      (str (style/inverse " ")
+           (when (:placeholder s) (style/dim (:placeholder s))))
+      (let [before (subs text 0 cursor)
+            at (if (< cursor len) (subs text cursor (inc cursor)) " ")
+            after (if (< cursor len) (subs text (inc cursor)) "")]
+        (str before (style/inverse at) after)))))
+
+(defn view
+  "Render the input: optional bold title, the field with its block cursor,
+   and a red error line when a validation error is pending."
+  [s]
+  (apply layout/vstack
+         (concat
+           (when (:title s) [(style/bold (:title s)) ""])
+           [(field-str s)]
+           (when (:error s) ["" (style/fg :red (:error s))]))))

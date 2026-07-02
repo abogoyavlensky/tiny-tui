@@ -1,0 +1,22 @@
+;; Input demo: prompt for a line of text with a validator.
+;;
+;; tui/input returns the string on submit, or nil on cancel (esc/Ctrl-C).
+;; The :validate fn rejects empty input with an inline error until the user
+;; types something and submits again.
+;;
+;; Run from the repo root: lgx run examples/input_name.lg
+
+(ns examples.input-name
+  (:require [tiny-tui.core :as tui]))
+
+(defn -main []
+  (let [name (tui/input {:title "What's your name?"
+                         :placeholder "type a name"
+                         :inline? true
+                         :validate (fn [text]
+                                     (when (empty? text) "Name can't be empty"))})]
+    (if name
+      (println "Hello," (str name "!"))
+      (println "Cancelled."))))
+
+(when-not *compiling-aot* (-main))

@@ -1,0 +1,134 @@
+(ns tiny-tui.input-test
+  (:require [clojure.test :refer :all]
+            [tiny-tui.input :as tinput]
+            [tiny-tui.layout :as layout]
+            [tiny-tui.style :as style]))
+
+(defn ups
+  "Apply a sequence of messages, returning the final state."
+  [s msgs]
+  (reduce (fn [st m] (first (tinput/update st m))) s msgs))
+
+(deftest test-create-defaults
+  (let [s (tinput/create {})]
+    (is (= "" (:text s)))
+    (is (= 0 (:cursor s)))
+    (is (nil? (:error s)))))
+
+(deftest test-create-with-value
+  (let [s (tinput/create {:value "hi"})]
+    (is (= "hi" (:text s)))
+    (is (= 2 (:cursor s)))))
+
+(deftest test-insert-appends
+  (let [s (ups (tinput/create {}) ["a" "b"])]
+    (is (= "ab" (:text s)))
+    (is (= 2 (:cursor s)))))
+
+(deftest test-insert-mid-string
+  ;; type "ac", move left, insert "b" -> "abc"
+  (let [s (ups (tinput/create {}) ["a" "c" :left "b"])]
+    (is (= "abc" (:text s)))
+    (is (= 2 (:cursor s)))))
+
+(deftest test-backspace
+  (let [s0 (tinput/create {:value "abc"})]
+    ;; at end: removes last char
+    (let [s (first (tinput/update s0 :backspace))]
+      (is (= "ab" (:text s)))
+      (is (= 2 (:cursor s))))
+    ;; at start: no-op
+    (let [s (ups s0 [:home :backspace])]
+      (is (= "abc" (:text s)))
+      (is (= 0 (:cursor s))))))
+
+(deftest test-delete-forward
+  (let [s0 (tinput/create {:value "abc"})]
+    ;; at home: deletes the char under the cursor
+    (let [s (ups s0 [:home :delete])]
+      (is (= "bc" (:text s)))
+      (is (= 0 (:cursor s))))
+    ;; at end: no-op
+    (let [s (first (tinput/update s0 :delete))]
+      (is (= "abc" (:text s)))
+      (is (= 3 (:cursor s))))))
+
+(deftest test-cursor-motion-clamps
+  (let [s0 (tinput/create {:value "abc"})]
+    (is (= 0 (:cursor (ups s0 [:home :left]))))
+    (is (= 3 (:cursor (ups s0 [:end :right]))))
+    (is (= 0 (:cursor (first (tinput/update s0 :home)))))
+    (is (= 3 (:cursor (first (tinput/update (ups s0 [:home]) :end)))))))
+
+(deftest test-q-inserts-not-quits
+  ;; the critical divergence from list/confirm: "q" is text, not cancel
+  (let [r (tinput/update (tinput/create {}) "q")]
+    (is (= "q" (:text (first r))))
+    (is (nil? (second r)))))
+
+(deftest test-edit-returns-no-event
+  (is (nil? (second (tinput/update (tinput/create {}) "a"))))
+  (is (nil? (second (tinput/update (tinput/create {:value "a"}) :backspace))))
+  (is (nil? (second (tinput/update (tinput/create {:value "a"}) :left)))))
+
+(deftest test-enter-submits-without-validate
+  (let [r (tinput/update (tinput/create {:value "hi"}) :enter)]
+    (is (= {:type :submit
+            :text "hi"} (second r)))))
+
+(defn non-empty [text]
+  (when (empty? text) "required"))
+
+(deftest test-enter-blocked-by-validate
+  (let [s (tinput/create {:validate non-empty})
+        r (tinput/update s :enter)]
+    (is (nil? (second r)))
+    (is (= "required" (:error (first r))))))
+
+(deftest test-edit-clears-error
+  (let [s (first (tinput/update (tinput/create {:validate non-empty}) :enter))]
+    (is (= "required" (:error s)))
+    (is (nil? (:error (first (tinput/update s "x")))))
+    (is (nil? (:error (first (tinput/update (tinput/create {:value "a"
+                                                            :validate non-empty})
+                                            :backspace)))))))
+
+(deftest test-enter-submits-when-valid
+  (let [s (ups (tinput/create {:validate non-empty}) [:enter "x"])
+        r (tinput/update s :enter)]
+    (is (= {:type :submit
+            :text "x"} (second r)))))
+
+(deftest test-esc-cancels
+  (is (= {:type :cancel} (second (tinput/update (tinput/create {:value "hi"}) :esc)))))
+
+(deftest test-view-empty-with-placeholder
+  (is (= (str (style/inverse " ") (style/dim "name"))
+         (tinput/view (tinput/create {:placeholder "name"})))))
+
+(deftest test-view-cursor-mid-string
+  ;; "ab", cursor on 'b' -> block cursor over 'b', nothing after
+  (let [s (first (tinput/update (tinput/create {:value "ab"}) :left))]
+    (is (= (str "a" (style/inverse "b"))
+           (tinput/view s)))))
+
+(deftest test-view-cursor-at-end
+  ;; "ab", cursor past the end -> trailing inverse space
+  (is (= (str "ab" (style/inverse " "))
+         (tinput/view (tinput/create {:value "ab"})))))
+
+(deftest test-view-with-title
+  (is (= (layout/vstack
+           (style/bold "Name")
+           ""
+           (str "ab" (style/inverse " ")))
+         (tinput/view (tinput/create {:title "Name"
+                                      :value "ab"})))))
+
+(deftest test-view-with-error
+  (let [s (first (tinput/update (tinput/create {:validate non-empty}) :enter))]
+    (is (= (layout/vstack
+             (str (style/inverse " "))
+             ""
+             (style/fg :red "required"))
+           (tinput/view s)))))
