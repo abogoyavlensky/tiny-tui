@@ -48,8 +48,10 @@ in view with a dim `12/50` position indicator — no configuration needed.
 Set `:filterable? true` to let the user type to narrow the list (fzf style):
 matching is case-insensitive substring on the item text, or pass `:filter-fn
 (fn [query item] boolean)` for custom matching. Arrows navigate the matches
-and enter selects. While filtering, letter keys type into the query — so
-they don't double as action keys, and only esc cancels.
+and enter selects. While filtering, letter keys type into the query, so bind
+actions to control keys (e.g. `:key :ctrl-d`) if you want them to fire while
+the filter is active — plain-letter actions are shadowed by typing. Only esc
+cancels.
 
 ```clojure
 (tui/select {:title "Checkout branch" :items branches

@@ -437,3 +437,88 @@
   (let [l (type-in (make-filterable {}) ["z" "z"])]
     (is (= (str "> zz" (style/inverse " "))
            (tlist/view l {:height 1})))))
+
+(def ctrl-actions
+  [{:id :delete
+    :key :ctrl-d
+    :label "delete"
+    :destructive? true}])
+
+(deftest test-filterable-ctrl-action-fires-while-typing
+  ;; type to narrow, then a control-key action fires on the highlighted match
+  (let [l (type-in (tlist/create {:items fruits
+                                  :filterable? true
+                                  :actions ctrl-actions})
+                   ["r" "r"])]
+    (is (= {:type :action
+            :action :delete
+            :item "Cherry"
+            :index 2
+            :destructive? true}
+           (second (tlist/update l :ctrl-d))))))
+
+(deftest test-filterable-letter-action-is-shadowed
+  ;; a plain-letter action key still types into the query (does not fire)
+  (let [l (tlist/create {:items fruits
+                         :filterable? true
+                         :actions [{:id :delete
+                                    :key "d"
+                                    :label "delete"}]})
+        r (tlist/update l "d")]
+    (is (= "d" (:query (first r))))
+    (is (nil? (second r)))))
+
+(deftest test-bindings-filterable-shows-ctrl-actions
+  (is (= [{:key "↑/↓"
+           :label "navigate"}
+          {:key "enter"
+           :label "select"}
+          {:key "^d"
+           :label "delete"}
+          {:key "esc"
+           :label "cancel"}]
+         (tlist/bindings (tlist/create {:items fruits
+                                        :filterable? true
+                                        :actions ctrl-actions})))))
+
+(deftest test-bindings-filterable-hides-letter-actions
+  ;; a letter action can't fire while filtering, so it's dropped from help
+  (is (= [{:key "↑/↓"
+           :label "navigate"}
+          {:key "enter"
+           :label "select"}
+          {:key "esc"
+           :label "cancel"}]
+         (tlist/bindings (tlist/create {:items fruits
+                                        :filterable? true
+                                        :actions [{:id :delete
+                                                   :key "d"
+                                                   :label "delete"}]})))))
+
+(deftest test-bindings-formats-ctrl-key-label
+  ;; ^d rendering applies to non-filterable lists too (string keys unchanged)
+  (is (= {:key "^d"
+          :label "delete"}
+         (nth (tlist/bindings (tlist/create {:items fruits
+                                             :actions ctrl-actions})) 2))))
+
+(deftest test-bindings-filterable-hides-reserved-key-actions
+  ;; an action bound to a key the filter loop intercepts (e.g. :enter) never
+  ;; fires, so it must not be advertised
+  (let [l (tlist/create {:items fruits
+                         :filterable? true
+                         :actions [{:id :pick
+                                    :key :enter
+                                    :label "pick"}
+                                   {:id :delete
+                                    :key :ctrl-d
+                                    :label "delete"}]})]
+    (is (= [{:key "↑/↓"
+             :label "navigate"}
+            {:key "enter"
+             :label "select"}
+            {:key "^d"
+             :label "delete"}
+            {:key "esc"
+             :label "cancel"}]
+           (tlist/bindings l)))))

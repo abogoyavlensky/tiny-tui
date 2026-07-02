@@ -107,7 +107,12 @@
       (= msg :down) [(move l 1) nil]
       (= msg :enter) [l (select-event l)]
       (= msg :esc) [l {:type :cancel}]
-      :else [l nil])
+      ;; Non-printable keys (e.g. :ctrl-d) can't be typed, so they may still
+      ;; trigger actions while filtering; plain letters are already consumed
+      ;; by the (string? msg) branch above.
+      :else (if-let [action (action-for-key l msg)]
+              [l (action-event l action)]
+              [l nil]))
     (cond
       (= msg :up) [(move l -1) nil]
       (= msg :down) [(move l 1) nil]
@@ -117,26 +122,49 @@
               [l (action-event l action)]
               [l nil]))))
 
+(defn- key-label [k]
+  ;; Display form of an action key: strings pass through; keyword keys like
+  ;; :ctrl-d render as "^d", others (e.g. :tab) as their name.
+  (if (keyword? k)
+    (let [n (name k)]
+      (if (string/starts-with? n "ctrl-") (str "^" (subs n 5)) n))
+    k))
+
+(defn- action-bindings [actions]
+  (map (fn [a] {:key (key-label (:key a))
+                :label (:label a)}) actions))
+
+;; Keys the widget or run loop consume before an action key would be seen, so
+;; an action bound to one of them can never fire while filtering.
+(def ^:private reserved-keys
+  #{:up :down :enter :esc :backspace :ctrl-c :resize})
+
+(defn- filter-fireable [actions]
+  ;; While filtering, only non-letter keys that aren't reserved can trigger
+  ;; actions (plain letters type into the query).
+  (filter (fn [a] (and (keyword? (:key a))
+                       (not (contains? reserved-keys (:key a)))))
+          actions))
+
 (defn bindings
   "Help-line entries (see tiny-tui.help/view) for this list's keys:
    navigation, enter, one per action, quit. When :filterable?, letter keys
-   type into the query — so actions and \"q\" are dropped and esc cancels."
+   type into the query, so only actions bound to non-letter keys (e.g.
+   :ctrl-d, shown as \"^d\") appear, \"q\" is dropped, and esc cancels."
   [l]
-  (if (:filterable? l)
-    [{:key "↑/↓"
-      :label "navigate"}
-     {:key "enter"
-      :label "select"}
-     {:key "esc"
-      :label "cancel"}]
-    (vec (concat [{:key "↑/↓"
-                   :label "navigate"}
-                  {:key "enter"
-                   :label "select"}]
-                 (map (fn [a] {:key (:key a)
-                               :label (:label a)}) (:actions l))
-                 [{:key "q"
-                   :label "quit"}]))))
+  (let [nav [{:key "↑/↓"
+              :label "navigate"}
+             {:key "enter"
+              :label "select"}]]
+    (if (:filterable? l)
+      (vec (concat nav
+                   (action-bindings (filter-fireable (:actions l)))
+                   [{:key "esc"
+                     :label "cancel"}]))
+      (vec (concat nav
+                   (action-bindings (:actions l))
+                   [{:key "q"
+                     :label "quit"}])))))
 
 (defn- truncate [text max-w]
   ;; Only plain text is truncated: cutting styled text by raw index could

@@ -151,8 +151,9 @@
    opts: :title, :items, :item->text, :actions, :filterable?, :filter-fn
    (see tiny-tui.list/create), :inline? (render in place, erasing on exit —
    see run), plus the run testing hooks (:read-key-fn :render-fn :screen).
-   With :filterable? the user types to narrow the list; letter keys then
-   type rather than trigger actions, so the two don't combine."
+   With :filterable? the user types to narrow the list; letter keys type
+   into the query, so bind actions to control keys (e.g. :key :ctrl-d) for
+   them to fire while filtering — plain-letter actions are shadowed."
   [opts]
   (let [result (run {:init {:mode :list
                             :list (tlist/create opts)}
