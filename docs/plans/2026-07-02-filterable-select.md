@@ -284,3 +284,10 @@ Delivered on branch `filterable-select` across five commits (Task 6 was verifica
 - **The plan's `item-budget` sketch used `(max 1 (dec h))`; the shipped version drops the clamp** (`(when h (dec h))`) precisely to make the height-1 case correct — a small but deliberate deviation caught by review.
 - **Codex's Task 1/Task 2 "not-wired-yet" notes were expected** — the plan sequences the render/selection wiring after the filter core; the final passes were clean.
 - **Known limitation (documented):** `:filterable?` and letter-key `:actions` don't combine (typing owns the keyboard).
+
+### Follow-up (2026-07-02): control-key actions while filtering
+
+User feedback: with a filter active there was no way to trigger letter actions (or "unfocus" the filter). Resolved the fzf way — actions bound to **non-letter keys** now fire while filtering, so bare letters keep typing and, e.g., `:key :ctrl-d` (shown as `^d` in the help line) deletes the highlighted match. Commit `808e389`:
+- `list/update` filterable branch routes non-printable keys through `action-for-key` (printables are consumed by the query first).
+- `bindings` advertises only fireable actions — keyword keys that aren't reserved (`:up :down :enter :esc :backspace :ctrl-c :resize`), formatted via `key-label` (`:ctrl-d` → `^d`).
+- Verified on a pty: after narrowing, `Ctrl-O` fired `Action :open on branch-7` with `^o open` in the help line. (Note: a `:destructive?` control-key action opens the confirm popup as usual — that's expected, not a hang.) 130 tests pass; a second codex finding (don't advertise reserved keys) was fixed with a locking test.
