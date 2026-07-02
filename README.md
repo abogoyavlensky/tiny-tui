@@ -83,6 +83,18 @@ an empty submit) and composes with `:filterable?`:
 ;; => [{...} {...}]   the checked items
 ```
 
+Align tabular rows with `layout/columns` — it pads each column to its widest
+cell (by visible width, so styled cells line up) and leaves the last column
+unpadded. Build the aligned lines once, then use them as `:item->text`:
+
+```clojure
+(let [lines (layout/columns (map (fn [d] [(:name d) (:version d)]) deps))
+      items (map (fn [d line] (assoc d :row line)) deps lines)]
+  (tui/select {:title "Dependencies" :items items :item->text :row}))
+;;  › org.clojure/data.json  2.5.1
+;;    lambdaisland/uri       1.19.155
+```
+
 Ask a yes/no question:
 
 ```clojure
@@ -165,6 +177,7 @@ lgx run examples/viewport_select.lg # long list with a scroll window
 lgx run examples/filter_select.lg   # type-to-filter select
 lgx run examples/deps_manager.lg    # delete-in-place with :on-action
 lgx run examples/multi_select.lg    # multi-select with checkboxes
+lgx run examples/columns_select.lg  # aligned tabular select (layout/columns)
 lgx run examples/inline_select.lg   # tui/select, inline (no alternate screen)
 lgx run examples/confirm_delete.lg  # tui/confirm
 lgx run examples/input_name.lg      # tui/input with validation

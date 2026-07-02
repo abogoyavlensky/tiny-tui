@@ -28,6 +28,45 @@
       (str s (apply str (repeat n " ")))
       s)))
 
+(defn- content-count
+  ;; Number of leading cells to keep: through the last non-empty one. Trailing
+  ;; blanks are dropped so a row missing later columns ends without a stray
+  ;; separator (which would show as trailing whitespace under a selected row).
+  [row]
+  (loop [i (count row)]
+    (if (and (pos? i) (= "" (nth row (dec i))))
+      (recur (dec i))
+      i)))
+
+(defn columns
+  "Align rows of cells into a table: each column is right-padded to the max
+   visible width of its cells (so styled cells line up), the last cell of a
+   row is left unpadded, and cells are joined with `sep` (default two spaces).
+   Returns a vector of row strings. Ragged rows are tolerated: missing cells
+   are blank, and trailing blanks are trimmed (a middle blank still pads, to
+   keep later columns aligned). Build the aligned lines once, then use them as
+   a list's :item->text; or vstack them for a static table."
+  ([rows] (columns "  " rows))
+  ([sep rows]
+   (if (empty? rows)
+     []
+     (let [ncols (apply max (map count rows))
+           norm (map (fn [row] (take ncols (concat row (repeat "")))) rows)
+           widths (map (fn [c]
+                         (apply max 0 (map (fn [row] (style/visible-width (nth row c)))
+                                           norm)))
+                       (range ncols))]
+       (vec (map (fn [row]
+                   (let [kept (take (content-count row) row)
+                         last-i (dec (count kept))]
+                     (string/join sep
+                                  (map-indexed (fn [c cell]
+                                                 (if (= c last-i)
+                                                   cell
+                                                   (pad cell (nth widths c))))
+                                               kept))))
+                 norm))))))
+
 (defn box
   "Draw a box around (possibly multi-line, possibly styled) `content`,
    sized to the widest visible line with one space of inner padding."

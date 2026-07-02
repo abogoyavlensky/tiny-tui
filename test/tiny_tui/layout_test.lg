@@ -46,3 +46,44 @@
                        (str "│ " (style/bold "ab") " │")
                        "└────┘"])
          (layout/box (style/bold "ab")))))
+
+(deftest test-columns-aligns
+  ;; col 0 padded to width 3, two-space sep, last col unpadded
+  (is (= ["a    x" "abc  y"]
+         (layout/columns [["a" "x"] ["abc" "y"]]))))
+
+(deftest test-columns-last-column-unpadded
+  ;; the trailing cell keeps no padding even when rows differ in that column
+  (is (= ["a  short" "a  longer value"]
+         (layout/columns [["a" "short"] ["a" "longer value"]]))))
+
+(deftest test-columns-styled-cell-aligns-by-visible-width
+  ;; a colored first cell pads by visible width, so the next column lines up
+  (is (= [(str (layout/pad (style/fg :cyan "ab") 4) "  " "x")
+          (str (layout/pad "abcd" 4) "  " "y")]
+         (layout/columns [[(style/fg :cyan "ab") "x"] ["abcd" "y"]]))))
+
+(deftest test-columns-custom-separator
+  ;; pad("a",3)="a  " then " | " -> three spaces before the pipe
+  (is (= ["a   | x" "aaa | y"]
+         (layout/columns " | " [["a" "x"] ["aaa" "y"]]))))
+
+(deftest test-columns-ragged-rows
+  ;; the short row's missing trailing cell is trimmed — no trailing whitespace
+  (is (= ["a  b" "c"]
+         (layout/columns [["a" "b"] ["c"]]))))
+
+(deftest test-columns-middle-blank-still-pads
+  ;; only trailing blanks are dropped; a blank middle cell keeps later
+  ;; columns aligned
+  (is (= [(str (layout/pad "aa" 2) "  " (layout/pad "b" 1) "  " "c")
+          (str (layout/pad "a" 2) "  " (layout/pad "" 1) "  " "z")]
+         (layout/columns [["aa" "b" "c"] ["a" "" "z"]]))))
+
+(deftest test-columns-empty
+  (is (= [] (layout/columns []))))
+
+(deftest test-columns-single-column
+  ;; one column is the last column -> nothing to pad
+  (is (= ["a" "bb"]
+         (layout/columns [["a"] ["bb"]]))))

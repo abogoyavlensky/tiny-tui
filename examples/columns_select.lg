@@ -1,0 +1,31 @@
+;; Tabular select: align name / version / source columns with layout/columns,
+;; so the caller doesn't hand-pad inside :item->text.
+;;
+;; Build the aligned lines once from all items, zip them onto the items, then
+;; point :item->text at the line.
+;;
+;; Run from the repo root: lgx run examples/columns_select.lg
+
+(ns examples.columns-select
+  (:require [tiny-tui.core :as tui]
+            [tiny-tui.layout :as layout]
+            [tiny-tui.style :as style]))
+
+(def deps
+  [{:name "org.clojure/data.json" :version "2.5.1" :source "maven"}
+   {:name "lambdaisland/uri" :version "1.19.155" :source "clojars"}
+   {:name "nooga/let-go-async" :version "0.1.0" :source "git"}])
+
+(defn -main []
+  (let [lines (layout/columns (map (fn [d]
+                                     [(:name d) (:version d) (style/dim (:source d))])
+                                   deps))
+        items (map (fn [d line] (assoc d :row line)) deps lines)
+        result (tui/select {:title "Dependencies"
+                            :items items
+                            :item->text :row})]
+    (case (:type result)
+      :select (println "Chose:" (:name (:item result)))
+      :cancel (println "Cancelled."))))
+
+(when-not *compiling-aot* (-main))
