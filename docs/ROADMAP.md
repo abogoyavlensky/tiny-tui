@@ -21,7 +21,7 @@ I lean toward :on-action plus a statuat clears on next keypress). It's thesingle
 
 Cheap and worth it
 
-- Multi-select — space toggles a checkbox column, enter submits the set. Picking deps to upgrade, files to stage, tests to run. Mostly reuses the list widget: a :selected set and a marker column.
+- Multi-select — space toggles a checkbox column, enter submits the set. Picking deps to upgrade, files to stage, tests to run. Mostly reuses the list widget: a :selected set and a marker column. **Delivered** (`docs/plans/2026-07-02-multi-select.md`): `:multi?` on the list — a `:selected` set of original indices (stable across filtering) and a `[x]`/`[ ]` checkbox column; `tui/multi-select` returns the chosen items (nil on cancel, [] on empty submit). Composes with filtering and the viewport; `set-items` clears the selection when items are replaced.
 - layout/columns — align name  version  date fields across rows. Real lists are almost always tabular, and today every caller hand-pads in :item->text. A small helper (given rows of cells, pad to per-column max visible width) covers 90% of "tables" without a table widget.
 - Inline mode (worth discussing) — anhell prompt without the alternatescreen, gum/fzf style, erasing the widget on exit. Some small tools feel wrong going full-screen for a 5-item pick. Implementation is moderate: track rendered height, cursor-up N lines per frame. I'd rate it "very nice", not blocking. **Delivered** as `:inline?` on `run`/`select`/`confirm` (`docs/plans/2026-07-02-inline-mode.md`); no cross-frame height state needed — each frame returns the cursor to its own top-left.
 
