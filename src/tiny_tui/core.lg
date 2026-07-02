@@ -10,6 +10,10 @@
 ;; event :ctrl-c without consulting :update) and treats :resize as a plain
 ;; redraw. Terminal size is injected as :tui/size before every view call.
 ;;
+;; :inline? true renders in place at the cursor (gum/fzf style) and erases
+;; the widget on exit, instead of taking over the alternate screen — best
+;; for small pickers that fit on screen.
+;;
 ;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
 ;; they let whole flows run headlessly with scripted keys.
 
@@ -35,7 +39,8 @@
   (let [update-fn (:update opts)
         view (:view opts)
         read-key-fn (or (:read-key-fn opts) key/read)
-        render-fn (or (:render-fn opts) screen/render!)]
+        render-fn (or (:render-fn opts)
+                      (if (:inline? opts) screen/render-inline! screen/render!))]
     (loop [state (:init opts)]
       (let [state (assoc state :tui/size (terminal-size))]
         (render-fn (view state))
@@ -54,10 +59,10 @@
 (defn run
   "Run a TUI program (see namespace docstring). Returns [final-state event]."
   [opts]
-  (if (false? (:screen opts))
-    (run-loop opts)
-    (screen/with-screen
-      (run-loop opts))))
+  (cond
+    (false? (:screen opts)) (run-loop opts)
+    (:inline? opts) (screen/with-inline-screen (run-loop opts))
+    :else (screen/with-screen (run-loop opts))))
 
 (def ^:private confirm-bindings
   [{:key "↑/↓"
@@ -133,12 +138,14 @@
    a string or a fn of the item); the accepted action event carries
    :confirmed? true.
    opts: :title, :items, :item->text, :actions (see tiny-tui.list/create),
-   plus the run testing hooks (:read-key-fn :render-fn :screen)."
+   :inline? (render in place, erasing on exit — see run), plus the run
+   testing hooks (:read-key-fn :render-fn :screen)."
   [opts]
   (let [result (run {:init {:mode :list
                             :list (tlist/create opts)}
                      :update (fn [state msg] (select-update opts state msg))
                      :view (fn [state] (select-view opts state))
+                     :inline? (:inline? opts)
                      :read-key-fn (:read-key-fn opts)
                      :render-fn (:render-fn opts)
                      :screen (:screen opts)})
@@ -151,7 +158,8 @@
   "Ask a yes/no question and return a plain boolean. Cancelling (esc, q,
    Ctrl-C, end of input) returns false.
    opts: :title, :message, :confirm-label, :cancel-label (see
-   tiny-tui.confirm/create), plus the run testing hooks."
+   tiny-tui.confirm/create), :inline? (render in place, erasing on exit —
+   see run), plus the run testing hooks."
   [opts]
   (let [result (run {:init {:confirm (tconfirm/create opts)}
                      :update (fn [state msg]
@@ -162,6 +170,7 @@
                                (tconfirm/view (:confirm state))
                                ""
                                (help/view confirm-bindings)))
+                     :inline? (:inline? opts)
                      :read-key-fn (:read-key-fn opts)
                      :render-fn (:render-fn opts)
                      :screen (:screen opts)})

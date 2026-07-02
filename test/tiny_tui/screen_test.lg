@@ -6,6 +6,7 @@
 (def home (str ESC "[H"))
 (def clear-eol (str ESC "[K"))
 (def clear-below (str ESC "[J"))
+(defn cursor-up [n] (str ESC "[" n "A"))
 
 (deftest test-frame-str-single-line
   (is (= (str home "Hello" clear-eol clear-below)
@@ -22,3 +23,21 @@
 (deftest test-frame-str-empty-string
   (is (= (str home clear-eol clear-below)
          (screen/frame-str ""))))
+
+(deftest test-inline-frame-str-single-line
+  (is (= (str "\r" "Hello" clear-eol clear-below "\r")
+         (screen/inline-frame-str "Hello"))))
+
+(deftest test-inline-frame-str-multi-line
+  (is (= (str "\r"
+              "one" clear-eol "\r\n"
+              "two" clear-eol "\r\n"
+              "three" clear-eol
+              clear-below
+              (cursor-up 2)
+              "\r")
+         (screen/inline-frame-str "one\ntwo\nthree"))))
+
+(deftest test-inline-frame-str-empty-string
+  (is (= (str "\r" clear-eol clear-below "\r")
+         (screen/inline-frame-str ""))))
