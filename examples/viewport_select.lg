@@ -7,7 +7,7 @@
   (:require [tiny-tui.core :as tui]))
 
 (def branches
-  (vec (map (fn [i] {:id i :name (str "branch-" i)}) (range 1 51))))
+  (vec (map (fn [i] {:id i :name (str "branch-" i)}) (range 1 100))))
 
 (defn -main []
   (let [result (tui/select {:title "Checkout branch"
