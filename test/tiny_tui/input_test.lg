@@ -1,6 +1,8 @@
 (ns tiny-tui.input-test
   (:require [clojure.test :refer :all]
-            [tiny-tui.input :as tinput]))
+            [tiny-tui.input :as tinput]
+            [tiny-tui.layout :as layout]
+            [tiny-tui.style :as style]))
 
 (defn ups
   "Apply a sequence of messages, returning the final state."
@@ -99,3 +101,34 @@
 
 (deftest test-esc-cancels
   (is (= {:type :cancel} (second (tinput/update (tinput/create {:value "hi"}) :esc)))))
+
+(deftest test-view-empty-with-placeholder
+  (is (= (str (style/inverse " ") (style/dim "name"))
+         (tinput/view (tinput/create {:placeholder "name"})))))
+
+(deftest test-view-cursor-mid-string
+  ;; "ab", cursor on 'b' -> block cursor over 'b', nothing after
+  (let [s (first (tinput/update (tinput/create {:value "ab"}) :left))]
+    (is (= (str "a" (style/inverse "b"))
+           (tinput/view s)))))
+
+(deftest test-view-cursor-at-end
+  ;; "ab", cursor past the end -> trailing inverse space
+  (is (= (str "ab" (style/inverse " "))
+         (tinput/view (tinput/create {:value "ab"})))))
+
+(deftest test-view-with-title
+  (is (= (layout/vstack
+           (style/bold "Name")
+           ""
+           (str "ab" (style/inverse " ")))
+         (tinput/view (tinput/create {:title "Name"
+                                      :value "ab"})))))
+
+(deftest test-view-with-error
+  (let [s (first (tinput/update (tinput/create {:validate non-empty}) :enter))]
+    (is (= (layout/vstack
+             (str (style/inverse " "))
+             ""
+             (style/fg :red "required"))
+           (tinput/view s)))))

@@ -16,7 +16,8 @@
    The cursor starts at the end of any initial :value."
   [opts]
   (let [text (or (:value opts) "")]
-    {:text text
+    {:title (:title opts)
+     :text text
      :cursor (count text)
      :placeholder (:placeholder opts)
      :validate (:validate opts)
@@ -74,3 +75,29 @@
     (= msg :enter) (submit s)
     (= msg :esc) [s {:type :cancel}]
     :else [s nil]))
+
+(defn- field-str [s]
+  ;; Draw our own block cursor with inverse video, since the run loop keeps
+  ;; the real terminal cursor hidden. Empty text shows the dim placeholder
+  ;; behind a leading cursor block; otherwise the char under the cursor is
+  ;; inverted, with a trailing inverse space when the cursor is at the end.
+  (let [text (:text s)
+        cursor (:cursor s)
+        len (count text)]
+    (if (zero? len)
+      (str (style/inverse " ")
+           (when (:placeholder s) (style/dim (:placeholder s))))
+      (let [before (subs text 0 cursor)
+            at (if (< cursor len) (subs text cursor (inc cursor)) " ")
+            after (if (< cursor len) (subs text (inc cursor)) "")]
+        (str before (style/inverse at) after)))))
+
+(defn view
+  "Render the input: optional bold title, the field with its block cursor,
+   and a red error line when a validation error is pending."
+  [s]
+  (apply layout/vstack
+         (concat
+           (when (:title s) [(style/bold (:title s)) ""])
+           [(field-str s)]
+           (when (:error s) ["" (style/fg :red (:error s))]))))
