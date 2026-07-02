@@ -1,170 +1,243 @@
 # tiny-tui
 
-A minimal terminal UI library for [let-go](https://github.com/nooga/let-go).
-It adds small interactive moments to otherwise normal command-line tools:
-pick an item from a list, run an action on it, confirm a destructive step.
-It is not a full TUI framework.
+A small terminal UI library for [let-go](https://github.com/nooga/let-go). It
+adds interactive moments to ordinary command-line tools: pick an item from a
+list, filter it, run actions on it, confirm a step, read a line of text. It is
+not a full TUI framework.
+
+Widgets are pure (`state + key -> [state event]` and `state -> string`); only
+`tiny-tui.screen` and `tiny-tui.key` touch the terminal.
 
 ## Quick start
-
-Pick an item:
 
 ```clojure
 (ns my.tool
   (:require [tiny-tui.core :as tui]))
 
-(def result
-  (tui/select {:title "Select project"
-               :items [{:id 1 :name "tiny-cli"}
-                       {:id 2 :name "tiny-tui"}
-                       {:id 3 :name "lgx"}]
-               :item->text :name}))
-
-(case (:type result)
-  :select (println "Selected" (:name (:item result)))
-  :cancel nil)
+(let [res (tui/select {:title "Select project"
+                       :items [{:name "tiny-cli"} {:name "tiny-tui"} {:name "lgx"}]
+                       :item->text :name})]
+  (case (:type res)
+    :select (println "Selected" (:name (:item res)))
+    :cancel nil))
 ```
 
-Add actions on the selected item. An action marked `:destructive?` (or
-`:confirm?`) asks for confirmation first and returns with `:confirmed? true`:
+`select` runs until the user picks an item or cancels, then returns an event
+map. Long lists scroll on their own. Turn on `:filterable?` to type-to-filter,
+`:multi?` for checkboxes, or `:on-action` to act without leaving the list. All
+are options on the one function, described below.
+
+## Reference
+
+Entry points live in `tiny-tui.core` (aliased `tui` here). Every one accepts
+`:inline?` and the testing hooks; both are described at the end.
+
+### select
+
+`(tui/select opts) -> event-map`
+
+Shows a navigable list and returns how the user left it.
+
+Options:
+
+- `:items` - the collection to show.
+- `:item->text` - `(fn [item] string)` rendering each row (default `str`).
+- `:title` - a bold heading above the list.
+- `:actions` - per-item commands (see [Actions](#actions)).
+- `:filterable?` - let the user type to narrow the list, matching a
+  case-insensitive substring of the row text.
+- `:filter-fn` - `(fn [query item] boolean)` replacing the default match.
+- `:multi?` - checkbox mode: space toggles, enter submits (see
+  [multi-select](#multi-select)).
+- `:on-action` - handle an action in place and keep browsing (see [Staying in
+  the loop](#staying-in-the-loop-on-action)).
+
+Return value, dispatched on `:type`:
+
+- `{:type :select :item i :index n}` - enter.
+- `{:type :action :action id :item i :index n}` - an action key, plus
+  `:confirmed? true` after a confirmation and `:destructive? true` when set.
+- `{:type :submit :items [...] :indices [...]}` - enter under `:multi?`.
+- `{:type :cancel}` - q, esc, Ctrl-C, or end of input.
+
+Keys: arrows move, enter selects, q or esc cancels. Under `:filterable?`,
+letters build the query and only esc cancels, so bind actions to control keys
+(`:key :ctrl-d`) to keep them reachable. Under `:multi?`, space toggles the
+row and enter submits the set.
+
+### Actions
+
+An action is a command the user runs on the highlighted item. List them in
+`:actions`, each a map:
+
+- `:id` - keyword echoed back in the event.
+- `:key` - the trigger, a string (`"d"`) or keyword (`:ctrl-d`, shown as `^d`).
+- `:label` - text for the help line.
+- `:destructive?` or `:confirm?` - open a yes/no confirmation first.
+- `:confirm-title`, `:confirm-message` - the confirmation text; the message
+  may be a `(fn [item] string)`.
 
 ```clojure
 (tui/select
- {:title "Dependencies"
-  :items deps
-  :item->text :name
+ {:title "Dependencies" :items deps :item->text :name
   :actions [{:id :open :key "o" :label "open"}
-            {:id :delete :key "d" :label "delete"
-             :destructive? true
-             :confirm-title "Delete dependency?"
-             :confirm-message (fn [dep] (str "Remove " (:name dep) "?"))}]})
-;; => {:type :action :action :delete :item {...} :index 1
-;;     :destructive? true :confirmed? true}
+            {:id :delete :key "d" :label "delete" :destructive? true
+             :confirm-message (fn [d] (str "Remove " (:name d) "?"))}]})
 ```
 
-Long lists scroll to a window sized to the terminal, keeping the selection
-in view with a dim `12/50` position indicator — no configuration needed.
+### Staying in the loop (`:on-action`)
 
-Set `:filterable? true` to let the user type to narrow the list (fzf style):
-matching is case-insensitive substring on the item text, or pass `:filter-fn
-(fn [query item] boolean)` for custom matching. Arrows navigate the matches
-and enter selects. While filtering, letter keys type into the query, so bind
-actions to control keys (e.g. `:key :ctrl-d`) if you want them to fire while
-the filter is active — plain-letter actions are shadowed by typing. Only esc
-cancels.
+By default an action ends `select`. Add `:on-action` to handle it in place and
+keep browsing:
 
 ```clojure
-(tui/select {:title "Checkout branch" :items branches
-             :item->text :name :filterable? true})
+(let [deps (atom initial)]
+  (tui/select
+   {:items @deps :item->text :name
+    :actions [{:id :remove :key "d" :label "remove" :destructive? true}]
+    :on-action (fn [ev]
+                 (swap! deps remove-item (:item ev))
+                 {:items @deps :status (str "Removed " (:name (:item ev)))})}))
 ```
 
-Stay in the loop with `:on-action`. Normally an action returns and exits;
-with a handler, it updates the list in place and keeps browsing. The handler
-receives the (confirmed) action event and returns `{:items new-items :status
-"..."}` — the items replace the list (cursor and filter preserved) and the
-status shows until the next keypress. Enter and esc still exit. The list
-widget stays pure; the handler is your code:
+The handler receives the (confirmed) action event and returns
+`{:items new-items :status "..."}`; both keys are optional. `:items` replaces
+the list in place, keeping the cursor and filter, and `:status` shows one line
+until the next keypress. Enter and cancel still exit. The handler is your code
+and may be impure; the widgets stay pure.
 
-```clojure
-(let [deps (atom initial-deps)]
-  (tui/select {:title "Dependencies" :items @deps :item->text :name
-               :actions [{:id :remove :key "d" :label "remove" :destructive? true}]
-               :on-action (fn [ev]
-                            (swap! deps remove-item (:item ev))
-                            {:items @deps :status (str "Removed " (:name (:item ev)))})}))
-```
+### multi-select
 
-Pick several with `tui/multi-select` — space toggles a checkbox, enter
-submits. It returns the chosen items in list order (`nil` on cancel, `[]` on
-an empty submit) and composes with `:filterable?`:
+`(tui/multi-select opts) -> [chosen items]` or `nil`
+
+A checkbox list: space toggles the row, enter submits. Returns the chosen
+items in list order, `nil` on cancel, or `[]` on an empty submit. Takes the
+same options as `select` and composes with `:filterable?`.
 
 ```clojure
 (tui/multi-select {:title "Stage files" :items files :item->text :name})
-;; => [{...} {...}]   the checked items
 ```
 
-Align tabular rows with `layout/columns` — it pads each column to its widest
-cell (by visible width, so styled cells line up) and leaves the last column
-unpadded. Build the aligned lines once, then use them as `:item->text`:
+### confirm
+
+`(tui/confirm opts) -> boolean`
+
+Asks a yes/no question. Returns `true` only when the user confirms; y or enter
+accept, n/esc/q/Ctrl-C decline.
 
 ```clojure
-(let [lines (layout/columns (map (fn [d] [(:name d) (:version d)]) deps))
-      items (map (fn [d line] (assoc d :row line)) deps lines)]
-  (tui/select {:title "Dependencies" :items items :item->text :row}))
-;;  › org.clojure/data.json  2.5.1
-;;    lambdaisland/uri       1.19.155
-```
-
-Ask a yes/no question:
-
-```clojure
-(when (tui/confirm {:title "Delete project?"
-                    :message "This cannot be undone."})
+(when (tui/confirm {:title "Delete project?" :message "This cannot be undone."})
   (delete-project!))
 ```
 
-Prompt for a line of text. `tui/input` returns the string on submit, or
-`nil` on cancel. A `:validate` fn (text → error string or `nil`) blocks
-submit and shows an inline error until the input is valid:
+Options: `:title`, `:message`, `:confirm-label`, `:cancel-label`.
+
+### input
+
+`(tui/input opts) -> string` or `nil`
+
+Reads one line of text. Returns the string on enter, `nil` on cancel.
+Left/right/home/end move the cursor; backspace and delete edit.
 
 ```clojure
-(let [name (tui/input {:title "What's your name?"
-                       :placeholder "type a name"
-                       :validate (fn [text]
-                                   (when (empty? text) "Name can't be empty"))})]
-  (when name (println "Hello," name)))
+(tui/input {:title "New name" :placeholder "type a name"
+            :validate (fn [t] (when (empty? t) "Name can't be empty"))})
 ```
 
-Single-line only. Left/right/home/end move the cursor; backspace and delete
-edit; enter submits; esc cancels.
+Options:
 
-Build a custom app on the same loop the helpers use:
+- `:title`, `:placeholder`.
+- `:value` - initial text.
+- `:validate` - `(fn [text] error-string-or-nil)`. A non-nil result blocks
+  submit and shows a red line until the next edit.
+
+### run
+
+`(tui/run opts) -> [final-state event]`
+
+The program loop the widgets build on. An app is three functions:
 
 ```clojure
 (tui/run
- {:init {:count 0}
+ {:init  {:count 0}
   :update (fn [state msg]
             (case msg
               :up [(update state :count inc) nil]
-              :down [(update state :count dec) nil]
               "q" [state :quit]
               [state nil]))
-  :view (fn [state] (str "Count: " (:count state)))})
-;; => [final-state event]
+  :view  (fn [state] (str "Count: " (:count state)))})
 ```
 
-`update` receives keywords for special keys (`:up` `:down` `:enter` `:esc`)
-and one-character strings for printable keys. Returning a non-nil event
-stops the loop. The runtime handles Ctrl-C, terminal resize, raw mode, the
-alternate screen, and cleanup on exceptions.
+`:update` returns `[next-state event]`. A nil event keeps the loop running;
+any other value stops it and becomes `run`'s return event. `:view` returns the
+string to draw. Messages are keywords for special keys (`:up :down :left
+:right :enter :esc :backspace :delete :home :end`, and `:ctrl-x` for control
+keys) and one-character strings for printable keys. The loop handles Ctrl-C,
+resize, raw mode, the alternate screen, and cleanup on exceptions, and adds
+`:tui/size` (a `[cols rows]` vector) to the state before each `:view`.
 
 ### Inline mode
 
 By default a widget takes over the alternate screen. Pass `:inline? true` to
-`select`, `confirm`, or `run` to render in place at the cursor instead — gum/
-fzf style — erasing the widget on exit so whatever you print next lands where
-it was:
+any entry point to draw at the cursor instead (gum/fzf style) and erase the
+widget on exit, so your next `println` lands where it was. Use it for small
+pickers; a widget taller than the terminal cannot scroll back, so keep the
+default for large UIs.
+
+### Testing hooks
+
+Every entry point accepts `:screen false`, `:read-key-fn`, and `:render-fn`,
+so you can drive a whole flow without a terminal:
 
 ```clojure
-(let [result (tui/select {:title "Flavors" :items flavors
-                          :item->text :name :inline? true})]
-  (println "Scooped" (:name (:item result))))  ; prints where the list was
+(tui/select {:items items :item->text :name
+             :screen false
+             :read-key-fn (fn [] :down)   ; or a scripted sequence
+             :render-fn (fn [_] nil)})
 ```
 
-Best for small pickers that fit on screen; a widget taller than the terminal
-can't scroll back, so reach for the default full-screen mode for large UIs.
+See `test/tiny_tui/core_test.lg` for the scripted-key pattern.
+
+## Layout and style
+
+`tiny-tui.layout` assembles strings; nothing here touches the terminal.
+
+- `(columns rows)` / `(columns sep rows)` - align rows of cells into columns,
+  padding each to its widest visible cell. Returns a vector of row strings.
+- `(vstack & blocks)` - stack blocks top to bottom.
+- `(hstack xs)` / `(hstack sep xs)` - join cells on one line (default two
+  spaces).
+- `(pad s w)` - right-pad `s` to visible width `w`.
+- `(box content)` - draw a border around the content.
+
+Build a tabular list by aligning once, then pointing `:item->text` at the line:
+
+```clojure
+(let [lines (layout/columns (map (fn [d] [(:name d) (:version d)]) deps))
+      items (map (fn [d line] (assoc d :row line)) deps lines)]
+  (tui/select {:items items :item->text :row}))
+;;  › org.clojure/data.json  2.5.1
+;;    lambdaisland/uri       1.19.155
+```
+
+`tiny-tui.style` wraps text in ANSI codes and measures it.
+
+- `(bold s)`, `(dim s)`, `(inverse s)`, `(fg color s)`, `(bg color s)`.
+- `(styled {:bold? :dim? :inverse? :fg :bg} s)` - several attributes at once.
+- `(strip s)`, `(visible-width s)` - drop the codes, or measure display width.
+- Colors are named keywords (`:red :green :yellow :blue :magenta :cyan :white
+  :black`, each with a `:bright-` variant) or an integer for 256-color.
 
 ## How it works
 
-Widgets are pure: `state + message -> [new-state event]` and
-`state -> string`. Only `tiny-tui.screen` and `tiny-tui.key/read` touch the
-terminal. This makes every flow testable without a terminal; pass
-`:read-key-fn`, `:render-fn`, and `:screen false` to `run`, `select`, or
-`confirm` to drive them with scripted keys (see `test/tiny_tui/core_test.lg`).
+A widget is two pure functions: `update` maps `[state message]` to
+`[new-state event]`, and `view` maps `state` to a string. The loop reads a
+key, calls `update`, and draws `view`. Only `tiny-tui.screen` and
+`tiny-tui.key/read` touch the terminal, so scripted keys drive every flow in a
+test.
 
-Namespaces: `core` (run/select/confirm), `list` and `confirm` (widgets),
-`style` and `layout` and `help` (string rendering), `screen` and `key`
-(terminal I/O).
+Namespaces: `core` (the entry points), `list`/`confirm`/`input` (widgets),
+`style`/`layout`/`help` (string rendering), `screen`/`key` (terminal I/O).
 
 ## Examples
 
@@ -187,13 +260,13 @@ lgx run examples/deps_actions.lg    # actions + confirmation
 ## Development
 
 Install dependencies with [mise](https://mise.jdx.dev/getting-started.html)
-(or manually, consulting the `.mise.toml` file):
+(or manually, from `.mise.toml`):
 
 ```bash
 mise trust && mise install
 ```
 
-Run main application commands:
+Common commands:
 
 ```bash
 lgx --help
