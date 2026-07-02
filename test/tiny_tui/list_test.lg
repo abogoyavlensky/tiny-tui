@@ -367,3 +367,73 @@
         l (first (tlist/update (first (tlist/update l :down)) :down))]
     (is (= 1 (:cursor l)))
     (is (= "Blueberry" (tlist/selected-item l)))))
+
+(deftest test-window-counts-filtered
+  ;; window measures the match set, not the original items
+  (let [l (assoc (make-filterable {}) :filtered [2 4] :cursor 0 :offset 0)]
+    (is (= {:start 0
+            :end 2
+            :windowed? false
+            :indicator nil}
+           (tlist/window l 10)))))
+
+(deftest test-view-filterable-shows-query-line
+  (is (= (string/join "\n"
+                      [(str "> " (style/inverse " "))
+                       (str "› " (style/inverse "Apple"))
+                       "  banana"
+                       "  Cherry"
+                       "  apricot"
+                       "  Blueberry"])
+         (tlist/view (make-filterable {})))))
+
+(deftest test-view-filterable-narrowed
+  (let [l (type-in (make-filterable {}) ["r" "r"])]
+    (is (= (string/join "\n"
+                        [(str "> rr" (style/inverse " "))
+                         (str "› " (style/inverse "Cherry"))
+                         "  Blueberry"])
+           (tlist/view l)))))
+
+(deftest test-view-filterable-no-match
+  (let [l (type-in (make-filterable {}) ["z" "z"])]
+    (is (= (string/join "\n"
+                        [(str "> zz" (style/inverse " "))
+                         (style/dim "No matches")])
+           (tlist/view l)))))
+
+(deftest test-view-filterable-windowed-reserves-query-row
+  ;; height 4 -> 1 query row + 2 item rows + indicator; cursor 0
+  (is (= (string/join "\n"
+                      [(str "> " (style/inverse " "))
+                       (str "› " (style/inverse "Apple"))
+                       "  banana"
+                       (style/dim "1/5")])
+         (tlist/view (make-filterable {}) {:height 4}))))
+
+(deftest test-bindings-filterable
+  (is (= [{:key "↑/↓"
+           :label "navigate"}
+          {:key "enter"
+           :label "select"}
+          {:key "esc"
+           :label "cancel"}]
+         (tlist/bindings (make-filterable {})))))
+
+(deftest test-view-filterable-height-one-query-only
+  ;; a single-row block spends its only row on the query line, no items
+  (is (= (str "> " (style/inverse " "))
+         (tlist/view (make-filterable {}) {:height 1}))))
+
+(deftest test-view-filterable-empty-list-uses-empty-text
+  ;; genuinely empty (nothing to filter) -> :empty-text, not "No matches"
+  (let [l (tlist/create {:items []
+                         :filterable? true
+                         :empty-text "Nothing here"})]
+    (is (= "Nothing here" (tlist/view l)))))
+
+(deftest test-view-filterable-height-one-no-match-query-only
+  ;; even with zero matches, a one-row block shows only the query line
+  (let [l (type-in (make-filterable {}) ["z" "z"])]
+    (is (= (str "> zz" (style/inverse " "))
+           (tlist/view l {:height 1})))))

@@ -119,16 +119,24 @@
 
 (defn bindings
   "Help-line entries (see tiny-tui.help/view) for this list's keys:
-   navigation, enter, one per action, quit."
+   navigation, enter, one per action, quit. When :filterable?, letter keys
+   type into the query — so actions and \"q\" are dropped and esc cancels."
   [l]
-  (vec (concat [{:key "↑/↓"
-                 :label "navigate"}
-                {:key "enter"
-                 :label "select"}]
-               (map (fn [a] {:key (:key a)
-                             :label (:label a)}) (:actions l))
-               [{:key "q"
-                 :label "quit"}])))
+  (if (:filterable? l)
+    [{:key "↑/↓"
+      :label "navigate"}
+     {:key "enter"
+      :label "select"}
+     {:key "esc"
+      :label "cancel"}]
+    (vec (concat [{:key "↑/↓"
+                   :label "navigate"}
+                  {:key "enter"
+                   :label "select"}]
+                 (map (fn [a] {:key (:key a)
+                               :label (:label a)}) (:actions l))
+                 [{:key "q"
+                   :label "quit"}]))))
 
 (defn- truncate [text max-w]
   ;; Only plain text is truncated: cutting styled text by raw index could
@@ -148,7 +156,7 @@
    fzf: scroll only enough to keep the cursor visible, tracked by :offset.
    When windowed and h >= 2, one row is reserved for the indicator."
   [l h]
-  (let [n (count (:items l))
+  (let [n (count (:filtered l))
         cursor (:cursor l)
         offset (:offset l)]
     (if (or (nil? h) (<= h 0) (<= n h))
@@ -170,11 +178,19 @@
          :windowed? true
          :indicator (when (>= h 2) (str (inc cursor) "/" n))}))))
 
+(defn- item-budget [l h]
+  ;; Rows for items+indicator: filterable lists spend one row on the query
+  ;; line, so the window gets one fewer than the whole block. nil means "no
+  ;; limit"; a value <= 0 (a single-row block) means no room for items.
+  (if (:filterable? l)
+    (when h (dec h))
+    h))
+
 (defn reconcile-offset
   "Persist a sticky scroll offset for block height `h`: return `l` with
    :offset set so the cursor stays visible. Call after moving the cursor."
   [l h]
-  (assoc l :offset (:start (window l h))))
+  (assoc l :offset (:start (window l (item-budget l h)))))
 
 (defn view
   "Render the list. view-opts may carry :width — the column budget; item
@@ -185,23 +201,39 @@
   ([l] (view l {}))
   ([l view-opts]
    (if (empty? (:items l))
+     ;; A genuinely empty list shows :empty-text (even when filterable —
+     ;; there is nothing to filter); "No matches" is reserved for a
+     ;; non-empty list narrowed to zero matches.
      (:empty-text l)
      (let [marker (:cursor-marker l)
            marker-w (style/visible-width marker)
            blank (apply str (repeat marker-w " "))
            max-w (when-let [w (:width view-opts)] (- w marker-w))
-           win (window l (:height view-opts))
-           start (:start win)
-           visible-items (take (- (:end win) start) (drop start (:items l)))
-           rows (map-indexed
-                  (fn [local item]
-                    (let [i (+ start local)
-                          text (truncate ((:item->text l) item) max-w)]
-                      (if (= i (:cursor l))
-                        (str marker ((:selected-style l) text))
-                        (str blank text))))
-                  visible-items)
-           rows (if (:indicator win)
-                  (concat rows [(style/dim (:indicator win))])
-                  rows)]
-       (string/join "\n" rows)))))
+           fset (:filtered l)
+           budget (item-budget l (:height view-opts))
+           ;; A single-row filterable block spends its only row on the query
+           ;; line, leaving no room for items or the "No matches" notice.
+           room? (or (nil? budget) (pos? budget))
+           win (if room?
+                 (window l budget)
+                 {:start 0
+                  :end 0
+                  :windowed? false
+                  :indicator nil})
+           ;; Each row is a position in the match set; map it back to the
+           ;; original item, and highlight when the position is the cursor.
+           item-rows (map (fn [pos]
+                            (let [item (nth (:items l) (nth fset pos))
+                                  text (truncate ((:item->text l) item) max-w)]
+                              (if (= pos (:cursor l))
+                                (str marker ((:selected-style l) text))
+                                (str blank text))))
+                          (range (:start win) (:end win)))
+           body (cond
+                  (not room?) []
+                  (and (:filterable? l) (empty? fset)) [(style/dim "No matches")]
+                  :else item-rows)
+           query-rows (when (:filterable? l)
+                        [(str "> " (:query l) (style/inverse " "))])
+           indicator-rows (when (:indicator win) [(style/dim (:indicator win))])]
+       (string/join "\n" (concat query-rows body indicator-rows))))))
