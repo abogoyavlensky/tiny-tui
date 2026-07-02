@@ -49,10 +49,19 @@
 (defn- move [s cursor]
   (assoc s :cursor (max 0 (min (count (:text s)) cursor)) :error nil))
 
+(defn- submit [s]
+  ;; Run :validate (when set) on the current text. A non-nil result blocks
+  ;; submit and becomes the inline error; nil emits the :submit event.
+  (let [error (when-let [v (:validate s)] (v (:text s)))]
+    (if error
+      [(assoc s :error error) nil]
+      [s {:type :submit
+          :text (:text s)}])))
+
 (defn update
   "Returns [new-state event]. Printable strings insert at the cursor;
-   :backspace/:delete edit; :left/:right/:home/:end move. :enter and :esc
-   are handled in a later stage. Editing and motion emit no event."
+   :backspace/:delete edit; :left/:right/:home/:end move; :enter submits
+   (subject to :validate); :esc cancels. Editing and motion emit no event."
   [s msg]
   (cond
     (string? msg) [(insert s msg) nil]
@@ -62,4 +71,6 @@
     (= msg :right) [(move s (inc (:cursor s))) nil]
     (= msg :home) [(move s 0) nil]
     (= msg :end) [(move s (count (:text s))) nil]
+    (= msg :enter) (submit s)
+    (= msg :esc) [s {:type :cancel}]
     :else [s nil]))

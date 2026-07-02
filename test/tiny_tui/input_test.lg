@@ -68,3 +68,34 @@
   (is (nil? (second (tinput/update (tinput/create {}) "a"))))
   (is (nil? (second (tinput/update (tinput/create {:value "a"}) :backspace))))
   (is (nil? (second (tinput/update (tinput/create {:value "a"}) :left)))))
+
+(deftest test-enter-submits-without-validate
+  (let [r (tinput/update (tinput/create {:value "hi"}) :enter)]
+    (is (= {:type :submit
+            :text "hi"} (second r)))))
+
+(defn non-empty [text]
+  (when (empty? text) "required"))
+
+(deftest test-enter-blocked-by-validate
+  (let [s (tinput/create {:validate non-empty})
+        r (tinput/update s :enter)]
+    (is (nil? (second r)))
+    (is (= "required" (:error (first r))))))
+
+(deftest test-edit-clears-error
+  (let [s (first (tinput/update (tinput/create {:validate non-empty}) :enter))]
+    (is (= "required" (:error s)))
+    (is (nil? (:error (first (tinput/update s "x")))))
+    (is (nil? (:error (first (tinput/update (tinput/create {:value "a"
+                                                            :validate non-empty})
+                                            :backspace)))))))
+
+(deftest test-enter-submits-when-valid
+  (let [s (ups (tinput/create {:validate non-empty}) [:enter "x"])
+        r (tinput/update s :enter)]
+    (is (= {:type :submit
+            :text "x"} (second r)))))
+
+(deftest test-esc-cancels
+  (is (= {:type :cancel} (second (tinput/update (tinput/create {:value "hi"}) :esc)))))
