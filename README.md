@@ -42,6 +42,9 @@ Add actions on the selected item. An action marked `:destructive?` (or
 ;;     :destructive? true :confirmed? true}
 ```
 
+Long lists scroll to a window sized to the terminal, keeping the selection
+in view with a dim `12/50` position indicator — no configuration needed.
+
 Ask a yes/no question:
 
 ```clojure
@@ -105,6 +108,7 @@ lgx run examples/hello_screen.lg    # enter/leave the terminal
 lgx run examples/static_screen.lg   # styled static screen
 lgx run examples/counter.lg         # interactive counter
 lgx run examples/select_project.lg  # tui/select
+lgx run examples/viewport_select.lg # long list with a scroll window
 lgx run examples/inline_select.lg   # tui/select, inline (no alternate screen)
 lgx run examples/confirm_delete.lg  # tui/confirm
 lgx run examples/deps_actions.lg    # actions + confirmation

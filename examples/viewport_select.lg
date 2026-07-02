@@ -1,0 +1,20 @@
+;; Viewport demo: a long list scrolls to a window sized to the terminal,
+;; keeping the selection visible with a dim "12/50" position indicator.
+;;
+;; Run from the repo root: lgx run examples/viewport_select.lg
+
+(ns examples.viewport-select
+  (:require [tiny-tui.core :as tui]))
+
+(def branches
+  (vec (map (fn [i] {:id i :name (str "branch-" i)}) (range 1 100))))
+
+(defn -main []
+  (let [result (tui/select {:title "Checkout branch"
+                            :items branches
+                            :item->text :name})]
+    (case (:type result)
+      :select (println "Checked out:" (:name (:item result)))
+      :cancel (println "Cancelled."))))
+
+(when-not *compiling-aot* (-main))

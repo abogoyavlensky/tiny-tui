@@ -78,6 +78,14 @@
     ""
     (help/view confirm-bindings)))
 
+(defn- list-height [opts state]
+  ;; Rows available for the list block = terminal rows minus the chrome
+  ;; around it: title + its blank (2) when a title is set, plus the blank
+  ;; and help lines (2). Clamped to at least one row for tiny/misreported
+  ;; terminals. The list's own scroll indicator is reserved inside this
+  ;; budget by tiny-tui.list/window, not counted here.
+  (max 1 (- (second (:tui/size state)) (if (:title opts) 4 2))))
+
 (defn- select-view [opts state]
   (if (= :confirm (:mode state))
     (confirm-view (:confirm state))
@@ -85,7 +93,8 @@
            (concat
              (when (:title opts)
                [(style/bold (:title opts)) ""])
-             [(tlist/view (:list state) {:width (first (:tui/size state))})
+             [(tlist/view (:list state) {:width (first (:tui/size state))
+                                         :height (list-height opts state)})
               ""
               (help/view (tlist/bindings (:list state)))]))))
 
@@ -117,7 +126,8 @@
         :else [(assoc state :mode :list :confirm nil :pending-action nil) nil]))
     (let [r (tlist/update (:list state) msg)
           event (second r)
-          state (assoc state :list (first r))
+          state (assoc state :list (tlist/reconcile-offset
+                                     (first r) (list-height opts state)))
           action (when (= :action (:type event)) (action-config opts event))]
       (if (and action (needs-confirm? action))
         [(assoc state
