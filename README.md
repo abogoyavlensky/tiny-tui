@@ -53,6 +53,21 @@ Ask a yes/no question:
   (delete-project!))
 ```
 
+Prompt for a line of text. `tui/input` returns the string on submit, or
+`nil` on cancel. A `:validate` fn (text → error string or `nil`) blocks
+submit and shows an inline error until the input is valid:
+
+```clojure
+(let [name (tui/input {:title "What's your name?"
+                       :placeholder "type a name"
+                       :validate (fn [text]
+                                   (when (empty? text) "Name can't be empty"))})]
+  (when name (println "Hello," name)))
+```
+
+Single-line only. Left/right/home/end move the cursor; backspace and delete
+edit; enter submits; esc cancels.
+
 Build a custom app on the same loop the helpers use:
 
 ```clojure
@@ -111,6 +126,7 @@ lgx run examples/select_project.lg  # tui/select
 lgx run examples/viewport_select.lg # long list with a scroll window
 lgx run examples/inline_select.lg   # tui/select, inline (no alternate screen)
 lgx run examples/confirm_delete.lg  # tui/confirm
+lgx run examples/input_name.lg      # tui/input with validation
 lgx run examples/deps_actions.lg    # actions + confirmation
 ```
 
