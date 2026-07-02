@@ -30,6 +30,30 @@
          clear-eol
          clear-below)))
 
+(defn inline-frame-str
+  "Build the ANSI string for one in-place (inline) render of view string
+   `s`. Like frame-str, but instead of homing to the top of the alternate
+   screen it renders wherever the cursor sits and, crucially, returns the
+   cursor to the frame's own top-left when done: carriage-return to column
+   0, each line + clear-to-end-of-line joined with \\r\\n, clear everything
+   below (erases leftover rows when a frame is shorter than the last one),
+   then move up height-1 rows and carriage-return.
+
+   Because every frame ends at its own top-left, each frame is entirely
+   self-contained — no rendered-height state is carried between frames, and
+   erasing the widget on exit is a single clear-below from that resting
+   position."
+  [s]
+  (let [lines (string/split s "\n")
+        lines (if (empty? lines) [""] lines)
+        height (count lines)]
+    (str "\r"
+         (string/join (str clear-eol "\r\n") lines)
+         clear-eol
+         clear-below
+         (if (> height 1) (str ESC "[" (dec height) "A") "")
+         "\r")))
+
 (defn shutdown!
   "Give the terminal back: restore style, cursor, main screen and cooked
    mode. Safe to call even if init! only partially succeeded."
