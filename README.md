@@ -70,6 +70,22 @@ and one-character strings for printable keys. Returning a non-nil event
 stops the loop. The runtime handles Ctrl-C, terminal resize, raw mode, the
 alternate screen, and cleanup on exceptions.
 
+### Inline mode
+
+By default a widget takes over the alternate screen. Pass `:inline? true` to
+`select`, `confirm`, or `run` to render in place at the cursor instead — gum/
+fzf style — erasing the widget on exit so whatever you print next lands where
+it was:
+
+```clojure
+(let [result (tui/select {:title "Flavors" :items flavors
+                          :item->text :name :inline? true})]
+  (println "Scooped" (:name (:item result))))  ; prints where the list was
+```
+
+Best for small pickers that fit on screen; a widget taller than the terminal
+can't scroll back, so reach for the default full-screen mode for large UIs.
+
 ## How it works
 
 Widgets are pure: `state + message -> [new-state event]` and
@@ -89,6 +105,7 @@ lgx run examples/hello_screen.lg    # enter/leave the terminal
 lgx run examples/static_screen.lg   # styled static screen
 lgx run examples/counter.lg         # interactive counter
 lgx run examples/select_project.lg  # tui/select
+lgx run examples/inline_select.lg   # tui/select, inline (no alternate screen)
 lgx run examples/confirm_delete.lg  # tui/confirm
 lgx run examples/deps_actions.lg    # actions + confirmation
 ```

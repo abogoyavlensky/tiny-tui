@@ -61,6 +61,22 @@ path: a body that throws inside `screen/with-screen` must still emit the
 restore sequence and then surface the error (see the "kaboom" pattern in
 the V1 plan summary).
 
+### Inline mode
+
+Inline mode (`:inline? true`) never enters the alternate screen, so verify by
+what's *absent* as much as what's present. A healthy inline run
+(`examples/inline_select.lg`) shows `ESC[?25l` (hide cursor) near the start and
+`ESC[?25h` (show cursor) near the end, but **no** `ESC[?1049h`/`ESC[?1049l`.
+Frames begin with `\r` (not `ESC[H`) and end with a cursor-up (`ESC[<n>A`)
+returning to the frame's top-left; the final teardown is a lone `ESC[J` that
+erases the widget, after which the app's own `println` prints where the widget
+sat. Assert the alternate screen is never touched:
+
+```bash
+printf '\033[B\r' | timeout 15 script -qec "lgx run examples/inline_select.lg" /dev/null \
+  | grep -a -c "$(printf '\033')\[?1049h"   # expect 0
+```
+
 ## Gotchas learned while building V1
 
 - Bytes sent before the app enables raw mode pass through the pty in
