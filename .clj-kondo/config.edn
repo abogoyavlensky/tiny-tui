@@ -1,0 +1,22 @@
+;; clj-kondo is a Clojure linter; tiny-tui is let-go (a Clojure dialect). The
+;; entries below teach clj-kondo the project's deliberate conventions. None of
+;; them silence real bugs.
+{:linters
+ {;; clojure.test's :refer :all is idiomatic in test namespaces.
+  :refer-all {:exclude [clojure.test]}}
+
+ :config-in-ns
+ {;; Widgets deliberately name their API `update` and `read`, shadowing
+  ;; clojure.core. That is the widget protocol, not an accidental redef.
+  tiny-tui.confirm {:linters {:redefined-var {:level :off}}}
+  tiny-tui.input {:linters {:redefined-var {:level :off}}}
+  tiny-tui.list {:linters {:redefined-var {:level :off}}}
+  tiny-tui.key {:linters {:redefined-var {:level :off}}}
+
+  ;; let-go's `catch` takes no class: (catch e body). clj-kondo reads it as
+  ;; Clojure's (catch Class binding body) and misparses the block. The
+  ;; capture/cleanup/rethrow pattern is correct; see AGENTS.md and
+  ;; screen/with-screen*.
+  tiny-tui.screen {:linters {:unresolved-symbol {:level :off}
+                             :unused-binding {:level :off}
+                             :syntax {:level :off}}}}}
