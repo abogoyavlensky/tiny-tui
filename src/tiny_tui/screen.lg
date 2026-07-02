@@ -112,3 +112,64 @@
    an exception escapes."
   [& body]
   (list 'tiny-tui.screen/with-screen* (list 'fn [] (cons 'do body))))
+
+;; --- Inline mode ---------------------------------------------------------
+;; Render in place at the cursor (gum/fzf style) instead of taking over the
+;; alternate screen, erasing the widget on exit. Siblings of the functions
+;; above; ordered so nothing forward-references (shutdown before init, both
+;; before with-inline-screen*).
+
+(defn render-inline!
+  "Write one full frame built from view string `s`, rendered in place."
+  [s]
+  (term/write (inline-frame-str s))
+  (term/flush))
+
+(defn shutdown-inline!
+  "Give the terminal back after inline mode: erase the widget — the cursor
+   rests at its top-left, so a clear-below wipes the whole thing — then
+   restore style, cursor and cooked mode. Never touches the main/alternate
+   screen (inline mode never left the main screen). Safe to call even if
+   init-inline! only partially succeeded."
+  []
+  (term/write (str clear-below "\r"))
+  (term/reset-style)
+  (term/show-cursor)
+  (term/flush)
+  (term/restore-mode!))
+
+(defn init-inline!
+  "Take over the terminal for inline mode: raw mode and a hidden cursor,
+   rendering in place — no alternate screen, no clear. Throws when
+   stdin/stdout is not a terminal (term/size returns nil). If setup fails
+   after raw mode was enabled, the terminal is restored before the error
+   propagates."
+  []
+  (when (nil? (term/size))
+    (throw (ex-info "tiny-tui requires a terminal (stdin/stdout is not a tty)" {})))
+  (term/raw-mode!)
+  (try
+    (term/hide-cursor)
+    (term/flush)
+    (catch e
+           (shutdown-inline!)
+      (throw e))))
+
+(defn with-inline-screen*
+  "Run thunk `f` with the terminal in inline TUI mode; shut the terminal
+   down afterwards whether `f` returned or threw, then return/rethrow. Uses
+   the same capture/cleanup/rethrow pattern as with-screen* to dodge the
+   let-go try/finally quirks."
+  [f]
+  (init-inline!)
+  (let [result (try [:ok (f)] (catch e [:err e]))]
+    (shutdown-inline!)
+    (if (= :ok (first result))
+      (second result)
+      (throw (second result)))))
+
+(defmacro with-inline-screen
+  "Run `body` with the terminal in inline TUI mode, guaranteeing cleanup
+   even when an exception escapes."
+  [& body]
+  (list 'tiny-tui.screen/with-inline-screen* (list 'fn [] (cons 'do body))))
