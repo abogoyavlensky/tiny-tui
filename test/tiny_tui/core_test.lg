@@ -148,6 +148,14 @@
                      :read-key-fn (scripted ["c"])}))
       (is (= true @ran)))))
 
+(deftest test-select-initial-status
+  (testing "a seed :status shows on the first frame, before any key"
+    (let [frames (atom [])]
+      (tui/select (string-opts {:status "seeded status"
+                                :read-key-fn (scripted [:enter])
+                                :render-fn (fn [s] (swap! frames conj s))}))
+      (is (some (fn [f] (re-find #"seeded status" f)) @frames)))))
+
 (defn filter-opts [script frames extra]
   (merge {:title "Projects"
           :items projects

@@ -60,6 +60,8 @@ Options:
 - `:title` - a bold heading above the list.
 - `:cursor-item` - start the cursor on the row equal to this item (else the
   top); handy for re-entering focused on a just-added item.
+- `:status` - a seed status line shown until the first key; e.g. feedback
+  carried in from a prior action.
 - `:actions` - per-item commands (see [Actions](#actions)).
 - `:filterable?` - let the user type to narrow the list, matching a
   case-insensitive substring of the row text.

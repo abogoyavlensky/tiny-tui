@@ -188,8 +188,11 @@
    its event (exits select), for work that must happen outside the loop —
    prompt for input, create something, then re-enter.
    :cursor-item starts the cursor on the row equal to it (else the top) —
-   handy for re-entering focused on a just-added item.
-   opts: :title, :items, :item->text, :actions, :cursor-item, :filterable?,
+   handy for re-entering focused on a just-added item. :status seeds a status
+   line shown until the first key — e.g. feedback carried in from a prior
+   action.
+   opts: :title, :items, :item->text, :actions, :cursor-item, :status,
+   :filterable?,
    :filter-fn (see tiny-tui.list/create), :inline? (render in place, erasing
    on exit — see run), plus the run testing hooks (:read-key-fn :render-fn
    :screen).
@@ -200,7 +203,10 @@
    {:type :submit :items [...] :indices [...]} (see tui/multi-select)."
   [opts]
   (let [result (run {:init {:mode :list
-                            :list (tlist/create opts)}
+                            :list (tlist/create opts)
+                            ;; A seed status line shown until the first key —
+                            ;; e.g. feedback carried in from a prior action.
+                            :status (:status opts)}
                      :update (fn [state msg] (select-update opts state msg))
                      :view (fn [state] (select-view opts state))
                      :inline? (:inline? opts)
