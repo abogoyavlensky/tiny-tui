@@ -14,8 +14,8 @@ Add tiny-tui to your project's `lgx.edn` and run `lgx install`:
 
 ```clojure
 ;; lgx.edn
-{:deps {abogoyavlensky/tiny-tui {:git/url "https://github.com/abogoyavlensky/tiny-tui"
-                                 :git/tag "v0.1.0"}}}
+{:deps {tiny-tui {:git/url "https://github.com/abogoyavlensky/tiny-tui"
+                  :git/tag "<TAG>"}}}
 ```
 
 `lgx install` puts tiny-tui's `src` on the source path, so you can require it
