@@ -81,11 +81,14 @@
 
 (defn- list-height [opts state]
   ;; Rows available for the list block = terminal rows minus the chrome
-  ;; around it: title + its blank (2) when a title is set, plus the blank
-  ;; and help lines (2). Clamped to at least one row for tiny/misreported
-  ;; terminals. The list's own scroll indicator is reserved inside this
-  ;; budget by tiny-tui.list/window, not counted here.
-  (max 1 (- (second (:tui/size state)) (if (:title opts) 4 2))))
+  ;; around it: title + its blank (2) when a title is set, the blank and help
+  ;; lines (2), and the status line + its blank (2) when a status is showing.
+  ;; Clamped to at least one row for tiny/misreported terminals. The list's
+  ;; own scroll indicator is reserved inside this budget by
+  ;; tiny-tui.list/window, not counted here.
+  (max 1 (- (second (:tui/size state))
+            (+ (if (:title opts) 4 2)
+               (if (:status state) 2 0)))))
 
 (defn- select-view [opts state]
   (if (= :confirm (:mode state))
@@ -95,8 +98,10 @@
              (when (:title opts)
                [(style/bold (:title opts)) ""])
              [(tlist/view (:list state) {:width (first (:tui/size state))
-                                         :height (list-height opts state)})
-              ""
+                                         :height (list-height opts state)})]
+             ;; A transient status line from :on-action, styled by the caller.
+             (when (:status state) ["" (:status state)])
+             [""
               (help/view (tlist/bindings (:list state)))]))))
 
 (defn- action-config [opts event]
@@ -116,27 +121,49 @@
        :confirm-label (or (:label action) "yes")
        :cancel-label "cancel"})))
 
+(defn- apply-on-action [opts state action-event]
+  ;; :on-action keeps the loop alive: run the caller's handler, swap in any
+  ;; items it returns (preserving cursor/filter), show its status, and keep
+  ;; browsing. Without a handler, return the action event and exit as before.
+  (let [handler (:on-action opts)
+        state (assoc state :mode :list :confirm nil :pending-action nil)]
+    (if handler
+      (let [result (or (handler action-event) {})
+            state (assoc state :status (:status result))
+            list (if (contains? result :items)
+                   (tlist/set-items (:list state) (:items result))
+                   (:list state))]
+        [(assoc state :list (tlist/reconcile-offset list (list-height opts state)))
+         nil])
+      [state action-event])))
+
 (defn- select-update [opts state msg]
-  (if (= :confirm (:mode state))
-    ;; confirmation owns every key while open
-    (let [r (tconfirm/update (:confirm state) msg)
-          event (second r)]
-      (cond
-        (nil? event) [(assoc state :confirm (first r)) nil]
-        (:value event) [state (assoc (:pending-action state) :confirmed? true)]
-        :else [(assoc state :mode :list :confirm nil :pending-action nil) nil]))
-    (let [r (tlist/update (:list state) msg)
-          event (second r)
-          state (assoc state :list (tlist/reconcile-offset
-                                     (first r) (list-height opts state)))
-          action (when (= :action (:type event)) (action-config opts event))]
-      (if (and action (needs-confirm? action))
-        [(assoc state
-                :mode :confirm
-                :confirm (confirm-for-action action event)
-                :pending-action event)
-         nil]
-        [state event]))))
+  ;; Clear the transient status on any key, so an :on-action status survives
+  ;; exactly until the next keypress.
+  (let [state (assoc state :status nil)]
+    (if (= :confirm (:mode state))
+      ;; confirmation owns every key while open
+      (let [r (tconfirm/update (:confirm state) msg)
+            event (second r)]
+        (cond
+          (nil? event) [(assoc state :confirm (first r)) nil]
+          (:value event) (apply-on-action opts state
+                                          (assoc (:pending-action state) :confirmed? true))
+          :else [(assoc state :mode :list :confirm nil :pending-action nil) nil]))
+      (let [r (tlist/update (:list state) msg)
+            event (second r)
+            state (assoc state :list (tlist/reconcile-offset
+                                       (first r) (list-height opts state)))
+            action (when (= :action (:type event)) (action-config opts event))]
+        (cond
+          (and action (needs-confirm? action))
+          [(assoc state
+                  :mode :confirm
+                  :confirm (confirm-for-action action event)
+                  :pending-action event)
+           nil]
+          (= :action (:type event)) (apply-on-action opts state event)
+          :else [state event])))))
 
 (defn select
   "Show a navigable list and return the user's choice:
@@ -148,6 +175,11 @@
    confirmation (configured by its :confirm-title and :confirm-message —
    a string or a fn of the item); the accepted action event carries
    :confirmed? true.
+   With :on-action (fn [action-event] -> {:items new-items :status \"...\"}),
+   an action does not return: the handler runs, any :items it returns replace
+   the list in place (cursor and filter preserved), its :status shows until
+   the next keypress, and the loop continues. Enter and cancel still exit.
+   The handler is the caller's code (it may be impure); the widgets stay pure.
    opts: :title, :items, :item->text, :actions, :filterable?, :filter-fn
    (see tiny-tui.list/create), :inline? (render in place, erasing on exit —
    see run), plus the run testing hooks (:read-key-fn :render-fn :screen).
