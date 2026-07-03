@@ -204,7 +204,7 @@ Impure factory:
 - Modify: `src/tiny_tui/core.lg`
 - Test: `test/tiny_tui/core_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Headless (`:screen false`, scripted `:read-key-fn`, no-op `:render-fn`) with a fake suggest-fn (pure fn over a fixed map, recording its calls in an atom):
   - Prefilled `:value` seeds suggestions (suggest-fn called once before any key).
   - Typing a char re-runs suggest-fn; `:down` then `:tab` accepts the second candidate; suggest-fn re-runs on the accepted text; `:enter` returns the completed string.
@@ -212,18 +212,18 @@ Impure factory:
   - More than 5 candidates → widget state holds only 5 (assert via the view or a render-fn capture).
   - Without `:suggest-fn`, behavior and help line are unchanged.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In `core.lg`'s `input`: seed suggestions at init when `:suggest-fn` is set; in the update fn, compare old/new `:text` and re-suggest (capped `take 5`) only on change; add the suggest-mode help bindings (`tab complete`, `↑/↓ navigate`). Update `input`'s docstring with `:suggest-fn`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS, full suite green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add :suggest-fn autocomplete to tui/input"`
 
 ### Task 6: Example, pty verification, and docs
