@@ -184,3 +184,43 @@
              ""
              (style/fg :red "required"))
            (tinput/view s)))))
+
+(deftest test-view-with-suggestions
+  ;; rows render below the field after a blank separator: the highlighted row
+  ;; gets the "› " marker and inverse text, the rest are indented and dim
+  (let [s (tinput/set-suggestions (tinput/create {:value "s"}) ["src/" "test/"])]
+    (is (= (layout/vstack
+             (str "s" (style/inverse " "))
+             ""
+             (str "  › " (style/inverse "src/"))
+             (str "    " (style/dim "test/")))
+           (tinput/view s)))))
+
+(deftest test-view-suggestions-highlight-follows-cursor
+  ;; :down moves the highlight to the second row
+  (let [s (ups (tinput/set-suggestions (tinput/create {:value "s"}) ["src/" "test/"])
+               [:down])]
+    (is (= (layout/vstack
+             (str "s" (style/inverse " "))
+             ""
+             (str "    " (style/dim "src/"))
+             (str "  › " (style/inverse "test/")))
+           (tinput/view s)))))
+
+(deftest test-view-empty-suggestions-unchanged
+  ;; no suggestions -> byte-identical to the field-only view
+  (is (= (str "ab" (style/inverse " "))
+         (tinput/view (tinput/create {:value "ab"})))))
+
+(deftest test-view-error-and-suggestions-coexist
+  (let [s (-> (tinput/create {})
+              (assoc :error "required")
+              (tinput/set-suggestions ["a/" "b/"]))]
+    (is (= (layout/vstack
+             (str (style/inverse " "))
+             ""
+             (style/fg :red "required")
+             ""
+             (str "  › " (style/inverse "a/"))
+             (str "    " (style/dim "b/")))
+           (tinput/view s)))))

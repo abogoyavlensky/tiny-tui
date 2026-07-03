@@ -121,24 +121,24 @@ Impure factory:
 - Modify: `src/tiny_tui/input.lg`
 - Test: `test/tiny_tui/input_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   View tests (compare against `layout/vstack`-built expected strings, as existing view tests do):
   - With suggestions, rows render below the field: highlighted row as marker + `style/inverse` text, others indented + `style/dim`.
   - With empty suggestions, the view is byte-identical to today's output.
   - Error line and suggestions can coexist (error renders in its current position).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add a private `suggestion-lines` helper and splice it into `view`'s `vstack` (blank separator line before the block, matching the widget's existing spacing rhythm).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: render input suggestions with highlighted row"`
 
 ### Task 3: Pure path-completion logic

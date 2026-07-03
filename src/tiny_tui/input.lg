@@ -133,12 +133,25 @@
             after (if (< cursor len) (subs text (inc cursor)) "")]
         (str before (style/inverse at) after)))))
 
+(defn- suggestion-lines [s]
+  ;; One row per suggestion: the highlighted row carries the "› " marker
+  ;; (indented to nest under the field) and inverse text; the rest are
+  ;; indented to align and dimmed — mirroring the list widget's cursor row.
+  (let [cursor (:suggestion-cursor s)]
+    (map-indexed (fn [i text]
+                   (if (= i cursor)
+                     (str "  › " (style/inverse text))
+                     (str "    " (style/dim text))))
+                 (:suggestions s))))
+
 (defn view
-  "Render the input: optional bold title, the field with its block cursor,
-   and a red error line when a validation error is pending."
+  "Render the input: optional bold title, the field with its block cursor, a
+   red error line when a validation error is pending, and — after a blank
+   separator — one row per suggestion, the highlighted one marked and inverse."
   [s]
   (apply layout/vstack
          (concat
            (when (:title s) [(style/bold (:title s)) ""])
            [(field-str s)]
-           (when (:error s) ["" (style/fg :red (:error s))]))))
+           (when (:error s) ["" (style/fg :red (:error s))])
+           (when (seq (:suggestions s)) (cons "" (suggestion-lines s))))))
