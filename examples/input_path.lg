@@ -1,0 +1,25 @@
+;; Path autocomplete demo: prompt for a directory with live filesystem
+;; completion. Type part of a name and press tab to complete; ↑/↓ move
+;; between candidates. :suggest-fn is tiny-tui.path/suggest-fn with
+;; {:dirs-only? true}, so only directories are offered.
+;;
+;; tui/input returns the string on submit, or nil on cancel (esc/Ctrl-C).
+;;
+;; Run from the repo root: lgx run examples/input_path.lg
+
+(ns examples.input-path
+  (:require [tiny-tui.core :as tui]
+            [tiny-tui.path :as path]))
+
+(defn -main []
+  (let [dir (tui/input {:title "Install skills to"
+                        :value ".agents/skills"
+                        :inline? true
+                        :suggest-fn (path/suggest-fn {:dirs-only? true})
+                        :validate (fn [text]
+                                    (when (empty? text) "Target directory can't be empty"))})]
+    (if dir
+      (println "Installing to" (str dir))
+      (println "Cancelled."))))
+
+(when-not *compiling-aot* (-main))

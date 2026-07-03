@@ -232,21 +232,22 @@ Impure factory:
 - Create: `examples/input_path.lg`
 - Modify: `README.md`, `AGENTS.md`
 
-- [ ] **Step 1: Write the example**
+- [x] **Step 1: Write the example**
   `examples/input_path.lg`: inline `tui/input` titled "Install skills to", `:value ".agents/skills"`, `:suggest-fn (path/suggest-fn {:dirs-only? true})`, blank-text validation; prints the chosen path or "Cancelled.".
 
-- [ ] **Step 2: Verify on a pty**
+- [x] **Step 2: Verify on a pty**
   Per `docs/pty-verification.md`, drive `lgx run examples/input_path.lg` with scripted bytes: type a partial dir name, tab (byte 9), arrows, enter — and separately the cancel paths (esc, Ctrl-C). Inspect raw output: suggestion rows appear/disappear and the inline widget erases cleanly on exit.
   Expected: completed path printed on submit; clean erase on every exit path.
+  _Verified against a throwaway `.agents/skills/{formatter,linter}` tree (removed after): tab-complete+submit, ↑/↓ navigate+tab, esc, and Ctrl-C. All inline (no alternate screen), cursor hidden/restored; the grown widget (7-row frame with suggestions) erases via a single `ESC[J` clear-below on every exit. Note: a pre-buffered `\003` is eaten as SIGINT by the pty's cooked mode at startup — Ctrl-C must be sent after a delay so raw mode is active (a test-harness artifact; unchanged run-loop path)._
 
-- [ ] **Step 3: Update docs**
+- [x] **Step 3: Update docs**
   README input section: document `:suggest-fn`, the tab/arrows keys, and `tiny-tui.path/suggest-fn` with a short example; add `input_path.lg` to the examples list. AGENTS.md: amend the I/O confinement sentence to include `tiny-tui.path/suggest-fn`.
 
-- [ ] **Step 4: Run `lgx fmt` and the full suite**
+- [x] **Step 4: Run `lgx fmt` and the full suite**
   Run: `lgx fmt && lgx test`
   Expected: clean fmt, all tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "docs: add path autocomplete example and docs"`
 
 ### Task 7: Wire autocomplete into skl's target prompt

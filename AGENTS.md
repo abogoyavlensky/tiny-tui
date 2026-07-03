@@ -3,7 +3,10 @@
 tiny-tui is a minimal terminal UI library for let-go (a Clojure-dialect
 Lisp with a Go VM). Pure widgets (`state + msg -> [state event]`,
 `state -> string`) with terminal I/O confined to `tiny-tui.screen` and
-`tiny-tui.key/read`. Design and stage-by-stage history:
+`tiny-tui.key/read`. The one sanctioned exception is
+`tiny-tui.path/suggest-fn`, which reads directory listings (never the
+terminal) for the input widget's optional autocomplete; the completion logic
+around it stays pure. Design and stage-by-stage history:
 `docs/tiny-tui-initial-design.md` and `docs/plans/2026-07-01-tiny-tui-v1.md`
 (its closing summary lists the let-go quirks that shaped the code).
 
