@@ -1,4 +1,4 @@
-# Input Path Autocomplete Implementation Plan
+# Input Path Autocomplete Implementation Plan — ✅ COMPLETE (tiny-tui); skl commit deferred on release
 
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -256,19 +256,79 @@ Impure factory:
 - Modify: `src/skl/commands.lg`
 - Test: skl's existing commands test (scripted-key flow tests)
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
   In skl's test for the target prompt: pass a fake `:suggest-fn` via `tui-opts`... note `tui-opts` merges *after* the base opts, so a test-supplied `:suggest-fn` overrides production's. Assert the flow still resolves the target when tab is scripted, and that production code sets `:suggest-fn` (e.g. a unit test that `resolve-target`'s input opts include it, or a flow test scripting tab against a real temp dir).
+  _Added `add-target-prompt-tab-completes-via-production-suggest-fn`: `:skill` given (skips multi-select), `:dir` omitted (target prompt runs), `:value "<base>/"` (via tui-opts), scripts `[:tab :enter]` with **no** fake suggest-fn — so production's `path/suggest-fn` must complete `<base>/` → `<base>/proj/`. Asserts install lands in `<base>/proj/alpha`, not `<base>/alpha`._
 
-- [ ] **Step 2: Run skl tests to verify it fails**
+- [x] **Step 2: Run skl tests to verify it fails**
   Run: `cd ../skl && lgx test`
   Expected: FAIL.
+  _Verified: with the `:suggest-fn` line disabled, tab is a no-op and both assertions fail (install lands in `<base>/alpha`). Re-enabled → passes._
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In `resolve-target`: require `tiny-tui.path`, add `:suggest-fn (path/suggest-fn {:dirs-only? true})` to the base input opts (before the `tui-opts` merge). Ensure skl's pinned tiny-tui version/checkout includes the new feature.
+  _Source implemented + verified. **Blocked on release:** skl pins tiny-tui `v0.1.1`, which lacks this feature. It was verified by temporarily pointing skl's dep at `:local/root "/Users/andrew/Projects/tiny-tui"` (lgx supports it); that override was reverted, so skl's `lgx.edn` is pristine at `v0.1.1`. I cannot push/release tiny-tui (no key access to the remote), so the pin bump is a user follow-up (see summary)._
 
-- [ ] **Step 4: Run skl tests to verify they pass**
+- [x] **Step 4: Run skl tests to verify they pass**
   Run: `cd ../skl && lgx test`
   Expected: PASS. Also verify manually on a pty: `skl add <url>` prompts with live dir suggestions.
+  _Full skl suite green (18 tests, 37 assertions) against the local tiny-tui checkout; `lgx fmt check` clean. Skipped the `skl add <url>` pty run: skl's input rendering is byte-identical to tiny-tui's, already pty-verified in Task 6, and the headless test already drives production `path/suggest-fn` end-to-end over a real temp dir._
 
-- [ ] **Step 5: Commit (in ../skl)**
+- [ ] **Step 5: Commit (in ../skl)** — DEFERRED (see summary)
   `git commit -m "feat: autocomplete local dirs in install target prompt"`
+  _Not committed: committing now would either bake a version guess, commit a non-building branch (references `tiny-tui.path` while pinned at `v0.1.1`), or commit a machine-specific `:local/root`. The verified source changes sit uncommitted in skl's working tree awaiting the tiny-tui release + pin bump._
+
+---
+
+## Implementation summary
+
+**tiny-tui (Tasks 1–6): complete, reviewed, committed on branch `fs-auto-complete`.**
+
+Six commits, TDD throughout (failing test → implement → green), each cleared by a
+`review-with-codex` checkpoint:
+
+1. `feat: add suggestion state and tab-accept to input widget` — `:suggestions`/`:suggestion-cursor` state, `set-suggestions`, and `:tab`/`:up`/`:down` handling in `tiny-tui.input`.
+2. `feat: render input suggestions with highlighted row` — `suggestion-lines` in `input/view` (highlighted row marked + inverse, others indented + dim, blank separator).
+3. `feat: add pure path completion logic` — `tiny-tui.path/split-input` + `candidates` (case-sensitive prefix, dotfile hiding, dirs get trailing `/`, `:dirs-only?`), unit-tested with injected entries.
+4. `feat: add filesystem suggest-fn for path completion` — impure `path/suggest-fn` factory (`~/` expansion, real temp-dir integration tests).
+5. `feat: add :suggest-fn autocomplete to tui/input` — the `core/input` wrapper: seed from `:value`, re-suggest only on text change (capped at 5), suggest-mode help line.
+6. `docs: add path autocomplete example and docs` — `examples/input_path.lg`, README input section, AGENTS.md I/O-exception note.
+
+Final state: **191 tiny-tui tests, 363 assertions, 0 failures**; `lgx fmt` clean. The
+inline widget was pty-verified end-to-end (type→tab→submit, ↑/↓ navigate, esc, Ctrl-C);
+the grown suggestion block erases via a single `ESC[J`, no alternate-screen leakage.
+
+### Issues encountered
+
+- **`os/ls`/`os/stat` throw, not nil, on some paths** (codex-caught in Task 4). `os/stat`
+  throws ENOTDIR on a trailing-slash path whose parent is a file; `os/ls` throws
+  `permission denied` on an existing-but-unreadable directory. Both would have crashed the
+  input loop, violating the "total, never throws" contract. Fixed with a `safe-ls` guard
+  (returns nil on any listing failure) plus a `stat-dir?` catch, with regression tests
+  (including a `chmod 000` case guarded to skip when run as root).
+- **PTY Ctrl-C at startup** — a pre-buffered `\003` is consumed as SIGINT by the pty's
+  cooked-mode line discipline before raw mode engages. Sending it after a short delay (raw
+  mode active) exercises the real `:ctrl-c` path. Harness artifact only; the run-loop path
+  is unchanged.
+
+### skl (Task 7): implemented + verified, commit DEFERRED — user follow-up required
+
+The wiring (`resolve-target` requires `tiny-tui.path` and adds
+`:suggest-fn (path/suggest-fn {:dirs-only? true})`) plus a guarding test are written and
+**verified green** (full skl suite: 18 tests, 37 assertions; fmt clean) against a temporary
+`:local/root` tiny-tui dep — since skl pins the released tag `v0.1.1`, which predates this
+feature. That override was reverted; skl's `lgx.edn` is pristine.
+
+**Why deferred:** the tiny-tui feature lives only on the local `fs-auto-complete` branch, and
+I have no push/release access to the tiny-tui remote (`git@github.com` → publickey denied), so
+skl cannot pin a released version carrying it. Every committable skl state today is bad
+(version guess / non-building branch / machine-specific `:local/root`), so the commit is left
+to the user.
+
+**Remaining user actions (in order):**
+1. Merge/release tiny-tui `fs-auto-complete` (tag + push; a feature ⇒ semver minor, e.g. `v0.2.0`).
+2. Bump skl's `lgx.edn` tiny-tui pin to that tag.
+3. Commit skl's staged changes: `git -C ../skl commit -am "feat: autocomplete local dirs in install target prompt"`.
+
+The verified Task 7 changes are waiting in skl's working tree:
+`src/skl/commands.lg` and `test/skl/commands_test.lg`.
