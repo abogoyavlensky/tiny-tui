@@ -129,6 +129,26 @@
 (defn- drop-last-char [s]
   (if (empty? s) s (subs s 0 (dec (count s)))))
 
+(defn- query-word-char? [q i]
+  ;; Same word rule as the input widget: an ASCII letter or digit. Kept local
+  ;; because the query has no cursor and widgets stay independent.
+  (let [c (int (first (seq (subs q i (inc i)))))]
+    (or (<= 48 c 57) (<= 65 c 90) (<= 97 c 122))))
+
+(defn- drop-last-word [q]
+  ;; Trim the trailing word of an append-only query: strip trailing separators,
+  ;; then the word chars before them (so "foo bar" and "foo bar-" both become
+  ;; "foo "). Used for :backspace-word / :ctrl-w while filtering.
+  (let [after-seps (loop [i (count q)]
+                     (if (and (pos? i) (not (query-word-char? q (dec i))))
+                       (recur (dec i))
+                       i))
+        start (loop [i after-seps]
+                (if (and (pos? i) (query-word-char? q (dec i)))
+                  (recur (dec i))
+                  i))]
+    (subs q 0 start)))
+
 (defn update
   "Returns [new-state event]. Events: {:type :select ...} on enter,
    {:type :action ...} on an action key, {:type :cancel} on q/esc,
@@ -136,7 +156,8 @@
 
    When :filterable?, printable keys build the :query and narrow the list
    instead (so \"q\" types rather than quits, and letter action keys are
-   shadowed by typing); only :esc cancels."
+   shadowed by typing); :backspace drops the last char and
+   :backspace-word/:ctrl-w the trailing query word; only :esc cancels."
   [l msg]
   (if (:filterable? l)
     (cond
@@ -144,6 +165,8 @@
       (and (:multi? l) (= msg " ")) [(toggle l) nil]
       (string? msg) [(refilter (assoc l :query (str (:query l) msg))) nil]
       (= msg :backspace) [(refilter (assoc l :query (drop-last-char (:query l)))) nil]
+      (or (= msg :backspace-word) (= msg :ctrl-w))
+      [(refilter (assoc l :query (drop-last-word (:query l)))) nil]
       (= msg :up) [(move l -1) nil]
       (= msg :down) [(move l 1) nil]
       (= msg :enter) [l (if (:multi? l) (submit-event l) (select-event l))]
@@ -179,7 +202,7 @@
 ;; Keys the widget or run loop consume before an action key would be seen, so
 ;; an action bound to one of them can never fire while filtering.
 (def ^:private reserved-keys
-  #{:up :down :enter :esc :backspace :ctrl-c :resize})
+  #{:up :down :enter :esc :backspace :backspace-word :ctrl-w :ctrl-c :resize})
 
 (defn- filter-fireable [actions]
   ;; While filtering, only non-letter keys that aren't reserved can trigger
