@@ -11,11 +11,11 @@
    {:id 3 :name "lgx"}])
 
 (defn -main []
-  (let [result (tui/select {:title "Select project"
-                            :items projects
-                            :item->text :name})]
-    (case (:type result)
-      :select (println "Selected:" (:name (:item result)))
-      :cancel (println "Cancelled."))))
-
+  (let [res (tui/select {:title "Select project"
+                         :items [{:name "tiny-cli"} {:name "tiny-tui"} {:name "lgx"}]
+                         :item->text :name})]
+    (case (:type res)
+      :select (println "Selected" (:name (:item res)))
+      :cancel nil)))
+  
 (when-not *compiling-aot* (-main))

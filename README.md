@@ -1,12 +1,8 @@
 # tiny-tui
 
 A small terminal UI library for [let-go](https://github.com/nooga/let-go). It
-adds interactive moments to ordinary command-line tools: pick an item from a
-list, filter it, run actions on it, confirm a step, read a line of text. It is
-not a full TUI framework.
-
-Widgets are pure (`state + key -> [state event]` and `state -> string`); only
-`tiny-tui.screen` and `tiny-tui.key` touch the terminal.
+adds interactive bits to command-line tools: pick an item from a
+list, filter it, run actions on it, confirm a step, read a line of text.
 
 ## Install
 
@@ -18,13 +14,10 @@ Add tiny-tui to your project's `lgx.edn` and run `lgx install`:
                   :git/tag "<TAG>"}}}
 ```
 
-`lgx install` puts tiny-tui's `src` on the source path, so you can require it
-as shown below.
-
 ## Quick start
 
 ```clojure
-(ns my.tool
+(ns mytool.main
   (:require [tiny-tui.core :as tui]))
 
 (let [res (tui/select {:title "Select project"
@@ -33,6 +26,10 @@ as shown below.
   (case (:type res)
     :select (println "Selected" (:name (:item res)))
     :cancel nil))
+```
+
+```
+lgx run main.lg
 ```
 
 ![Select Project example](./docs/images/select_project.png)
@@ -83,6 +80,10 @@ Keys: arrows move, enter selects, q or esc cancels. Under `:filterable?`,
 letters build the query and only esc cancels, so bind actions to control keys
 (`:key :ctrl-d`) to keep them reachable. Under `:multi?`, space toggles the
 row and enter submits the set.
+
+Filterable select example:
+
+![Filterable select](./docs/images/filterable.png)
 
 ### Actions
 
@@ -140,6 +141,8 @@ same options as `select` and composes with `:filterable?`.
 (tui/multi-select {:title "Stage files" :items files :item->text :name})
 ```
 
+![Multi-select](./docs/images/mutli_select.png)
+
 ### confirm
 
 `(tui/confirm opts) -> boolean`
@@ -153,6 +156,8 @@ accept, n/esc/q/Ctrl-C decline.
 ```
 
 Options: `:title`, `:message`, `:confirm-label`, `:cancel-label`.
+
+![Confirmation](./docs/images/confirmation.png)
 
 ### input
 
@@ -197,6 +202,8 @@ trailing `/` so accepting one and typing again descends into it. `opts`:
 `:dirs-only?` restricts candidates to directories. It never throws - a missing,
 non-directory, or unreadable target yields `[]`. (The pure `path/split-input`
 and `path/candidates` underneath are unit-testable with injected entries.)
+
+![Input](./docs/images/input.png)
 
 ### run
 
