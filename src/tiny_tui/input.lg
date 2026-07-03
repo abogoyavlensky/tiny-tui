@@ -5,6 +5,12 @@
 ;; Unlike list/confirm, printable keys — including "q" — are inserted as
 ;; text; only :esc cancels. Enter runs an optional :validate fn: a non-nil
 ;; result is shown as an inline error and blocks submit; nil submits.
+;;
+;; Optional autocomplete: a caller feeds candidate strings via
+;; set-suggestions; :up/:down move the highlight and :tab replaces the text
+;; with the highlighted candidate. The widget stays pure — it renders and
+;; navigates suggestions but never computes them (see tiny-tui.path for the
+;; filesystem helper and the :suggest-fn wiring in core).
 
 (ns tiny-tui.input
   (:require [tiny-tui.layout :as layout]
@@ -13,7 +19,8 @@
 (defn create
   "opts: {:title \"...\" :placeholder \"...\" :value \"initial\"
           :validate (fn [text] error-string-or-nil)}
-   The cursor starts at the end of any initial :value."
+   The cursor starts at the end of any initial :value. Suggestions start
+   empty; a caller feeds them via set-suggestions (e.g. from a :suggest-fn)."
   [opts]
   (let [text (or (:value opts) "")]
     {:title (:title opts)
@@ -21,7 +28,16 @@
      :cursor (count text)
      :placeholder (:placeholder opts)
      :validate (:validate opts)
-     :error nil}))
+     :error nil
+     :suggestions []
+     :suggestion-cursor 0}))
+
+(defn set-suggestions
+  "Replace the suggestion list (full replacement texts, not fragments) and
+   reset the highlight to the first row. Pure: the caller computes the
+   candidates; the widget only renders and navigates them."
+  [s suggestions]
+  (assoc s :suggestions (vec suggestions) :suggestion-cursor 0))
 
 (defn- insert [s ins]
   (let [{:keys [text cursor]} s]
@@ -59,10 +75,29 @@
       [s {:type :submit
           :text (:text s)}])))
 
+(defn- move-suggestion [s delta]
+  ;; Slide the highlight within [0, count-1] (no wrap, matching the list
+  ;; widget's edges). A no-op when there are no suggestions.
+  (let [n (count (:suggestions s))]
+    (if (zero? n)
+      s
+      (assoc s :suggestion-cursor
+             (max 0 (min (dec n) (+ (:suggestion-cursor s) delta)))))))
+
+(defn- accept-suggestion [s]
+  ;; Replace the text with the highlighted suggestion, caret at the end,
+  ;; error cleared. A no-op when there are no suggestions (tab does nothing).
+  (if (empty? (:suggestions s))
+    s
+    (let [text (nth (:suggestions s) (:suggestion-cursor s))]
+      (assoc s :text text :cursor (count text) :error nil))))
+
 (defn update
   "Returns [new-state event]. Printable strings insert at the cursor;
-   :backspace/:delete edit; :left/:right/:home/:end move; :enter submits
-   (subject to :validate); :esc cancels. Editing and motion emit no event."
+   :backspace/:delete edit; :left/:right/:home/:end move the caret;
+   :up/:down move the suggestion highlight (a no-op without suggestions);
+   :tab accepts the highlighted suggestion; :enter submits (subject to
+   :validate); :esc cancels. Editing, motion, and tab-accept emit no event."
   [s msg]
   (cond
     (string? msg) [(insert s msg) nil]
@@ -72,6 +107,9 @@
     (= msg :right) [(move s (inc (:cursor s))) nil]
     (= msg :home) [(move s 0) nil]
     (= msg :end) [(move s (count (:text s))) nil]
+    (= msg :down) [(move-suggestion s 1) nil]
+    (= msg :up) [(move-suggestion s -1) nil]
+    (= msg :tab) [(accept-suggestion s) nil]
     (= msg :enter) (submit s)
     (= msg :esc) [s {:type :cancel}]
     :else [s nil]))

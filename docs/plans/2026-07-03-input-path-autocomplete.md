@@ -93,7 +93,7 @@ Impure factory:
 - Modify: `src/tiny_tui/input.lg`
 - Test: `test/tiny_tui/input_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   In `input_test.lg`, using the existing `ups` helper:
   - `create` defaults: `:suggestions` is `[]`, `:suggestion-cursor` is `0`.
   - `set-suggestions` replaces the vector and resets the cursor to 0.
@@ -101,18 +101,18 @@ Impure factory:
   - `:tab` with suggestions `["src/" "test/"]` and cursor 1 sets `:text` to `"test/"`, `:cursor` to 5, clears a pending `:error`; emits no event.
   - `:tab` with empty suggestions leaves state unchanged.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — new assertions on missing keys/behavior.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In `input.lg`: add `:suggestions`/`:suggestion-cursor` to `create`, private `accept-suggestion` and `move-suggestion` helpers (defined before `update` — no forward refs), public `set-suggestions`, and the `:tab`/`:up`/`:down` branches in `update`. Update the namespace docstring and `update`'s docstring.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS, no regressions.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add suggestion state and tab-accept to input widget"`
 
 ### Task 2: Render suggestions in the input view
