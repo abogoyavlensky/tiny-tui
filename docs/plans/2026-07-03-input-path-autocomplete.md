@@ -176,25 +176,26 @@ Impure factory:
 - Modify: `src/tiny_tui/path.lg`
 - Test: `test/tiny_tui/path_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Build a fixture tree in a temp dir via `(os/sh "mkdir" "-p" ...)` (and a plain file via `os/sh touch`), e.g. `<tmp>/alpha/`, `<tmp>/beta/`, `<tmp>/note.txt`. Assert:
   - `((suggest-fn {}) "<tmp>/a")` → `["<tmp>/alpha/"]`.
   - `((suggest-fn {:dirs-only? true}) "<tmp>/")` → dirs only.
   - Missing dir → `[]`; text pointing at a file path → `[]`. Never throws.
   Clean the fixture up with the capture/cleanup/rethrow pattern from `screen/with-screen*` (let-go `try`/`finally` gotcha).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Add `suggest-fn` to `path.lg` (after the pure fns): `~/` expansion via `(os/getenv "HOME")` for listing only, `os/stat` dir check → `[]` fallback, `os/ls` + per-entry `os/stat` to build `{:name :dir?}` entries, delegate to `candidates`.
+  _Note: codex review caught that `os/ls` throws `permission denied` on an existing-but-unreadable directory (`stat-dir?` alone wasn't enough). Replaced the pre-check with a `safe-ls` guard that returns nil on any listing failure (missing/file/unreadable), plus a regression test._
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add filesystem suggest-fn for path completion"`
 
 ### Task 5: Wire :suggest-fn into the tui/input wrapper
