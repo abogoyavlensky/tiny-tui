@@ -1,0 +1,125 @@
+(ns tiny-tui.path-test
+  (:require [clojure.test :refer :all]
+            [os]
+            [tiny-tui.path :as path]))
+
+(deftest test-split-input
+  (is (= {:dir "src/"
+          :prefix "ti"} (path/split-input "src/ti")))
+  (is (= {:dir ""
+          :prefix "ti"} (path/split-input "ti")))
+  (is (= {:dir "src/"
+          :prefix ""} (path/split-input "src/")))
+  (is (= {:dir "~/"
+          :prefix "pro"} (path/split-input "~/pro")))
+  (is (= {:dir ""
+          :prefix ""} (path/split-input ""))))
+
+(def entries
+  [{:name "src"
+    :dir? true}
+   {:name "start"
+    :dir? true}
+   {:name "notes.txt"
+    :dir? false}
+   {:name "README.md"
+    :dir? false}
+   {:name ".git"
+    :dir? true}
+   {:name ".gitignore"
+    :dir? false}])
+
+(deftest test-candidates-prefix-match-sorted
+  ;; prefix "s" matches both dirs (sorted); dirs get a trailing slash
+  (is (= ["src/" "start/"] (path/candidates entries "s" {})))
+  ;; a file prefix keeps files, no trailing slash
+  (is (= ["notes.txt"] (path/candidates entries "n" {}))))
+
+(deftest test-candidates-case-sensitive
+  ;; upper-case prefix matches the upper-case name; lower-case does not
+  (is (= ["README.md"] (path/candidates entries "R" {})))
+  (is (= [] (path/candidates entries "r" {}))))
+
+(deftest test-candidates-dirs-only
+  (is (= ["src/" "start/"] (path/candidates entries "" {:dirs-only? true}))))
+
+(deftest test-candidates-hides-dotfiles-unless-dot-prefix
+  ;; dotfiles are hidden for a normal prefix ...
+  (is (= ["README.md" "notes.txt" "src/" "start/"]
+         (path/candidates entries "" {})))
+  (is (= ["src/" "start/"] (path/candidates entries "s" {})))
+  ;; ... and shown once the prefix itself starts with "."
+  (is (= [".git/" ".gitignore"] (path/candidates entries "." {}))))
+
+(deftest test-candidates-include-dir-part
+  ;; the candidate is a full replacement for the typed text, not a fragment
+  (is (= ["src/tiny_tui/"]
+         (path/candidates [{:name "tiny_tui"
+                            :dir? true}]
+                          "src/ti" {}))))
+
+;; --- suggest-fn integration (real filesystem, temp fixture) ---
+
+(def tmp-root "/tmp/tiny-tui-path-test")
+
+(defn build-fixture! []
+  ;; alpha/ beta/ dirs and a note.txt file under a fresh tmp-root
+  (os/sh "rm" "-rf" tmp-root)
+  (os/sh "mkdir" "-p" (str tmp-root "/alpha"))
+  (os/sh "mkdir" "-p" (str tmp-root "/beta"))
+  (os/sh "touch" (str tmp-root "/note.txt")))
+
+(defn with-fixture [f]
+  ;; Capture/cleanup/rethrow (as in screen/with-screen*): a bare try/finally
+  ;; would swallow the error in let-go, and the rm must run whether f returns
+  ;; or throws.
+  (build-fixture!)
+  (let [result (try [:ok (f)] (catch e [:err e]))]
+    (os/sh "rm" "-rf" tmp-root)
+    (if (= :ok (first result))
+      (second result)
+      (throw (second result)))))
+
+(deftest test-suggest-fn-lists-matching-entries
+  (with-fixture
+    (fn []
+      (let [suggest (path/suggest-fn {})]
+        ;; prefix "a" -> the alpha dir, with a trailing slash
+        (is (= [(str tmp-root "/alpha/")]
+               (suggest (str tmp-root "/a"))))
+        ;; listing the dir itself -> every entry, sorted; dirs get slashes
+        (is (= [(str tmp-root "/alpha/")
+                (str tmp-root "/beta/")
+                (str tmp-root "/note.txt")]
+               (suggest (str tmp-root "/"))))))))
+
+(deftest test-suggest-fn-dirs-only
+  (with-fixture
+    (fn []
+      (let [suggest (path/suggest-fn {:dirs-only? true})]
+        (is (= [(str tmp-root "/alpha/")
+                (str tmp-root "/beta/")]
+               (suggest (str tmp-root "/"))))))))
+
+(deftest test-suggest-fn-missing-or-file-dir-returns-empty
+  (with-fixture
+    (fn []
+      (let [suggest (path/suggest-fn {})]
+        ;; the directory part doesn't exist
+        (is (= [] (suggest (str tmp-root "/nope/x"))))
+        ;; the directory part is actually a file -> not a directory -> []
+        (is (= [] (suggest (str tmp-root "/note.txt/x"))))))))
+
+(deftest test-suggest-fn-unreadable-dir-returns-empty
+  ;; an existing but unreadable directory must not crash the input loop
+  (with-fixture
+    (fn []
+      (let [locked (str tmp-root "/locked")]
+        (os/sh "mkdir" "-p" locked)
+        (os/sh "chmod" "000" locked)
+        (let [readable? (try (do (os/ls locked) true) (catch e false))]
+          ;; skip where 000 doesn't actually restrict reads (e.g. as root)
+          (when-not readable?
+            (is (= [] ((path/suggest-fn {}) (str locked "/")))))
+          ;; restore perms so the fixture rm -rf can clean up
+          (os/sh "chmod" "755" locked))))))

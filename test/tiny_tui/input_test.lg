@@ -102,6 +102,58 @@
 (deftest test-esc-cancels
   (is (= {:type :cancel} (second (tinput/update (tinput/create {:value "hi"}) :esc)))))
 
+(deftest test-create-suggestion-defaults
+  (let [s (tinput/create {})]
+    (is (= [] (:suggestions s)))
+    (is (= 0 (:suggestion-cursor s)))))
+
+(deftest test-set-suggestions-replaces-and-resets-cursor
+  (let [s (tinput/set-suggestions (tinput/create {}) ["a" "b" "c"])]
+    (is (= ["a" "b" "c"] (:suggestions s)))
+    (is (= 0 (:suggestion-cursor s))))
+  ;; moving the cursor, then re-setting suggestions, resets it to 0
+  (let [s (ups (tinput/set-suggestions (tinput/create {}) ["a" "b" "c"]) [:down])
+        s2 (tinput/set-suggestions s ["x" "y"])]
+    (is (= 1 (:suggestion-cursor s)))
+    (is (= ["x" "y"] (:suggestions s2)))
+    (is (= 0 (:suggestion-cursor s2)))))
+
+(deftest test-suggestion-cursor-motion-clamps
+  (let [s0 (tinput/set-suggestions (tinput/create {}) ["a" "b" "c"])]
+    (is (= 1 (:suggestion-cursor (ups s0 [:down]))))
+    ;; clamped at count-1
+    (is (= 2 (:suggestion-cursor (ups s0 [:down :down :down]))))
+    ;; clamped at 0
+    (is (= 0 (:suggestion-cursor (ups s0 [:up]))))
+    (is (= 1 (:suggestion-cursor (ups s0 [:down :down :up]))))
+    ;; motion emits no event
+    (is (nil? (second (tinput/update s0 :down))))
+    (is (nil? (second (tinput/update s0 :up))))))
+
+(deftest test-suggestion-cursor-motion-empty-is-noop
+  (let [s (tinput/create {})]
+    (is (= 0 (:suggestion-cursor (first (tinput/update s :down)))))
+    (is (= 0 (:suggestion-cursor (first (tinput/update s :up)))))
+    (is (nil? (second (tinput/update s :down))))
+    (is (nil? (second (tinput/update s :up))))))
+
+(deftest test-tab-accepts-highlighted-suggestion
+  (let [s (-> (tinput/create {:value "s"})
+              (tinput/set-suggestions ["src/" "test/"])
+              (ups [:down])
+              (assoc :error "oops"))
+        r (tinput/update s :tab)]
+    (is (= "test/" (:text (first r))))
+    (is (= 5 (:cursor (first r))))
+    (is (nil? (:error (first r))))
+    (is (nil? (second r)))))
+
+(deftest test-tab-with-empty-suggestions-is-noop
+  (let [r (tinput/update (tinput/create {:value "abc"}) :tab)]
+    (is (= "abc" (:text (first r))))
+    (is (= 3 (:cursor (first r))))
+    (is (nil? (second r)))))
+
 (deftest test-view-empty-with-placeholder
   (is (= (str (style/inverse " ") (style/dim "name"))
          (tinput/view (tinput/create {:placeholder "name"})))))
@@ -131,4 +183,44 @@
              (str (style/inverse " "))
              ""
              (style/fg :red "required"))
+           (tinput/view s)))))
+
+(deftest test-view-with-suggestions
+  ;; rows render below the field after a blank separator: the highlighted row
+  ;; gets the "› " marker and inverse text, the rest are indented and dim
+  (let [s (tinput/set-suggestions (tinput/create {:value "s"}) ["src/" "test/"])]
+    (is (= (layout/vstack
+             (str "s" (style/inverse " "))
+             ""
+             (str "  › " (style/inverse "src/"))
+             (str "    " (style/dim "test/")))
+           (tinput/view s)))))
+
+(deftest test-view-suggestions-highlight-follows-cursor
+  ;; :down moves the highlight to the second row
+  (let [s (ups (tinput/set-suggestions (tinput/create {:value "s"}) ["src/" "test/"])
+               [:down])]
+    (is (= (layout/vstack
+             (str "s" (style/inverse " "))
+             ""
+             (str "    " (style/dim "src/"))
+             (str "  › " (style/inverse "test/")))
+           (tinput/view s)))))
+
+(deftest test-view-empty-suggestions-unchanged
+  ;; no suggestions -> byte-identical to the field-only view
+  (is (= (str "ab" (style/inverse " "))
+         (tinput/view (tinput/create {:value "ab"})))))
+
+(deftest test-view-error-and-suggestions-coexist
+  (let [s (-> (tinput/create {})
+              (assoc :error "required")
+              (tinput/set-suggestions ["a/" "b/"]))]
+    (is (= (layout/vstack
+             (str (style/inverse " "))
+             ""
+             (style/fg :red "required")
+             ""
+             (str "  › " (style/inverse "a/"))
+             (str "    " (style/dim "b/")))
            (tinput/view s)))))

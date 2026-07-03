@@ -260,23 +260,59 @@
    {:key "esc"
     :label "cancel"}])
 
+(def ^:private input-suggest-bindings
+  [{:key "tab"
+    :label "complete"}
+   {:key "↑/↓"
+    :label "navigate"}
+   {:key "enter"
+    :label "submit"}
+   {:key "esc"
+    :label "cancel"}])
+
+(def ^:private max-suggestions 5)
+
+(defn- resuggest [input suggest-fn]
+  ;; Recompute the input's suggestions from its current text (capped), via the
+  ;; caller-supplied impure suggest-fn. Kept out of the pure input widget.
+  (tinput/set-suggestions input (vec (take max-suggestions (suggest-fn (:text input))))))
+
 (defn input
   "Prompt for a single line of text. Returns the entered string on submit,
    or nil on cancel (esc, Ctrl-C, end of input). An empty but submitted
    field returns \"\", distinct from a cancel's nil.
+   With :suggest-fn (fn text -> [candidate-strings]) the field autocompletes:
+   the candidates are recomputed (capped at five) after every text change —
+   including the initial :value — while pure cursor/highlight motion does not
+   re-run it; ↑/↓ move the highlight and tab replaces the text with it. The
+   suggest-fn is the caller's impure code (e.g. tiny-tui.path/suggest-fn) and
+   is expected to be total (return [] rather than throw).
    opts: :title, :placeholder, :value, :validate (fn text -> error-string
-   or nil; see tiny-tui.input/create), :inline? (render in place, erasing
-   on exit — see run), plus the run testing hooks."
+   or nil; see tiny-tui.input/create), :suggest-fn, :inline? (render in place,
+   erasing on exit — see run), plus the run testing hooks."
   [opts]
-  (let [result (run {:init {:input (tinput/create opts)}
+  (let [suggest-fn (:suggest-fn opts)
+        base (tinput/create opts)
+        init-input (if suggest-fn (resuggest base suggest-fn) base)
+        bindings (if suggest-fn input-suggest-bindings input-bindings)
+        result (run {:init {:input init-input}
                      :update (fn [state msg]
-                               (let [r (tinput/update (:input state) msg)]
-                                 [(assoc state :input (first r)) (second r)]))
+                               (let [before (:input state)
+                                     r (tinput/update before msg)
+                                     after (first r)
+                                     ;; Re-suggest only when the text actually
+                                     ;; changed (edits and tab-accept), never on
+                                     ;; pure cursor/highlight motion.
+                                     after (if (and suggest-fn
+                                                    (not= (:text before) (:text after)))
+                                             (resuggest after suggest-fn)
+                                             after)]
+                                 [(assoc state :input after) (second r)]))
                      :view (fn [state]
                              (layout/vstack
                                (tinput/view (:input state))
                                ""
-                               (help/view input-bindings)))
+                               (help/view bindings)))
                      :inline? (:inline? opts)
                      :read-key-fn (:read-key-fn opts)
                      :render-fn (:render-fn opts)

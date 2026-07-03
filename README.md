@@ -172,6 +172,31 @@ Options:
 - `:value` - initial text.
 - `:validate` - `(fn [text] error-string-or-nil)`. A non-nil result blocks
   submit and shows a red line until the next edit.
+- `:suggest-fn` - `(fn [text] [candidate-strings])`. Turns the field into an
+  autocomplete: after every text change (including the initial `:value`) the
+  candidates are recomputed, capped at five, and listed below the field. Tab
+  replaces the text with the highlighted candidate; ↑/↓ move the highlight;
+  enter still submits the current text. Each candidate is a full replacement
+  for the whole field, not a fragment. The fn is your (possibly impure) code
+  and should be total - return `[]` rather than throw.
+
+For filesystem paths, `tiny-tui.path/suggest-fn` is ready-made:
+
+```clojure
+(require '[tiny-tui.path :as path])
+
+(tui/input {:title "Install skills to"
+            :value ".agents/skills"
+            :suggest-fn (path/suggest-fn {:dirs-only? true})})
+```
+
+`(path/suggest-fn opts)` lists the directory implied by the typed text
+(expanding a leading `~/`), matching names case-sensitively by prefix and
+hiding dotfiles unless the prefix starts with `.`. Directory candidates get a
+trailing `/` so accepting one and typing again descends into it. `opts`:
+`:dirs-only?` restricts candidates to directories. It never throws - a missing,
+non-directory, or unreadable target yields `[]`. (The pure `path/split-input`
+and `path/candidates` underneath are unit-testable with injected entries.)
 
 ### run
 
@@ -276,6 +301,7 @@ lgx run examples/columns_select.lg  # aligned tabular select (layout/columns)
 lgx run examples/inline_select.lg   # tui/select, inline (no alternate screen)
 lgx run examples/confirm_delete.lg  # tui/confirm
 lgx run examples/input_name.lg      # tui/input with validation
+lgx run examples/input_path.lg      # tui/input with path autocomplete
 lgx run examples/deps_actions.lg    # actions + confirmation
 ```
 

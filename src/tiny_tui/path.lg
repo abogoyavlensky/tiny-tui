@@ -1,0 +1,91 @@
+;; tiny-tui.path — filesystem path completion for the input widget's
+;; :suggest-fn. The matching logic (split-input, candidates) is pure and
+;; unit-tested with injected entries; only suggest-fn touches the filesystem,
+;; via the os module. That impure factory is the one sanctioned exception to
+;; tiny-tui's "terminal I/O confined to screen and key/read" rule — it reads
+;; directory listings, never the terminal.
+
+(ns tiny-tui.path
+  (:require [os]
+            [string]))
+
+(defn split-input
+  "Split typed path text into {:dir ... :prefix ...}: :dir is everything up to
+   and including the last '/' (\"\" when there is no slash, i.e. the current
+   directory), :prefix is the partial name after it."
+  [text]
+  (let [i (string/last-index-of text "/")]
+    (if (nil? i)
+      {:dir ""
+       :prefix text}
+      {:dir (subs text 0 (inc i))
+       :prefix (subs text (inc i))})))
+
+(defn- keep-entry? [prefix dirs-only? entry]
+  (and (string/starts-with? (:name entry) prefix)
+       (or (not dirs-only?) (:dir? entry))
+       ;; Hide dotfiles unless the user is explicitly typing a dot prefix.
+       (or (string/starts-with? prefix ".")
+           (not (string/starts-with? (:name entry) ".")))))
+
+(defn candidates
+  "Full replacement strings for the typed `text`, drawn from `entries` (a seq
+   of {:name ... :dir? bool}, injected so this stays pure). Matching is
+   case-sensitive prefix (shell-style); dotfiles are hidden unless the prefix
+   itself starts with '.'; with {:dirs-only? true} non-directories are dropped.
+   Each candidate is (str dir name) with a trailing '/' for directories, so
+   accepting one and typing again descends into it. Returns a sorted vector."
+  [entries text opts]
+  (let [{:keys [dir prefix]} (split-input text)
+        dirs-only? (:dirs-only? opts)]
+    (->> entries
+         (filter (fn [e] (keep-entry? prefix dirs-only? e)))
+         (map (fn [e] (str dir (:name e) (when (:dir? e) "/"))))
+         (sort)
+         (vec))))
+
+(defn- expand-tilde [dir]
+  ;; Expand a leading "~/" to $HOME for *listing* only; candidate strings keep
+  ;; the typed "~/" form (they are built from the un-expanded :dir). A blank
+  ;; $HOME leaves the path untouched rather than producing "/...".
+  (if (string/starts-with? dir "~/")
+    (let [home (os/getenv "HOME")]
+      (if (empty? home) dir (str home "/" (subs dir 2))))
+    dir))
+
+(defn- stat-dir? [path]
+  ;; True when `path` is an existing directory. os/stat returns nil for a
+  ;; missing path but *throws* ENOTDIR for a trailing-slash path whose parent
+  ;; is a file (e.g. "notes.txt/"), so both are caught here. The catch is
+  ;; required: a let-go try without one would surface the thrown value
+  ;; instead of propagating.
+  (boolean (:dir? (try (os/stat path) (catch e nil)))))
+
+(defn- safe-ls [dir]
+  ;; Directory entries, or nil (never a throw) when `dir` can't be listed —
+  ;; missing, not a directory, or unreadable (permission denied). This single
+  ;; guard subsumes an existence check and keeps suggest-fn total.
+  (try (os/ls dir) (catch e nil)))
+
+(defn suggest-fn
+  "Build the impure (fn [text] -> [candidate-strings]) for the input widget's
+   :suggest-fn, completing filesystem paths. It lists the directory implied by
+   `text` (the current dir when `text` has no '/'), expanding a leading '~/' to
+   $HOME for the listing while keeping candidates in the typed form, then
+   delegates ranking/formatting to `candidates`. Total by construction:
+   returns [] when the directory is missing, is not a directory, or is
+   unreadable, and never throws — so the caller need not guard it (avoiding
+   the let-go try quirk). opts: {:dirs-only? bool} — see candidates."
+  [opts]
+  (fn [text]
+    (let [expanded (expand-tilde (:dir (split-input text)))
+          list-dir (if (empty? expanded) "." expanded)
+          entries (safe-ls list-dir)]
+      (if (nil? entries)
+        []
+        (candidates (map (fn [name]
+                           {:name name
+                            :dir? (stat-dir? (str expanded name))})
+                         entries)
+                    text
+                    opts)))))

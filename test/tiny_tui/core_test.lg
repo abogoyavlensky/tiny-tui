@@ -446,6 +446,75 @@
                                       (atom [])
                                       {:validate validate}))))))
 
+(defn recording-suggest [calls table]
+  ;; a fake :suggest-fn: records each text it's asked to complete, and returns
+  ;; the fixed candidates in `table` for that text (or [] when absent).
+  (fn [text]
+    (swap! calls conj text)
+    (or (get table text) [])))
+
+(deftest test-input-suggest-seeds-from-initial-value
+  ;; a prefilled :value is completed once at create time, before any key
+  (let [calls (atom [])
+        suggest (recording-suggest calls {"src/" ["src/tiny_tui/"]})]
+    (tui/input (input-opts [:enter] (atom [])
+                           {:value "src/"
+                            :suggest-fn suggest}))
+    (is (= ["src/"] @calls))))
+
+(deftest test-input-suggest-tab-accepts-and-resuggests
+  ;; type "s" -> two candidates; :down highlights the 2nd; :tab accepts it and
+  ;; re-runs suggest on the completed text; :enter returns it
+  (let [calls (atom [])
+        table {"s" ["src/" "start/"]
+               "start/" ["start/sub/"]}
+        suggest (recording-suggest calls table)
+        result (tui/input (input-opts ["s" :down :tab :enter] (atom [])
+                                      {:suggest-fn suggest}))]
+    (is (= "start/" result))
+    ;; seed(""), type("s"), accept("start/") — NOT on :down
+    (is (= ["" "s" "start/"] @calls))))
+
+(deftest test-input-suggest-not-rerun-on-cursor-motion
+  ;; caret and suggestion-highlight motion never re-run suggest-fn (text unchanged)
+  (let [calls (atom [])
+        suggest (recording-suggest calls {"ab" ["abc/" "abd/"]})]
+    (tui/input (input-opts [:left :right :up :down :enter] (atom [])
+                           {:value "ab"
+                            :suggest-fn suggest}))
+    (is (= ["ab"] @calls))))
+
+(deftest test-input-suggest-caps-at-five
+  ;; more than five candidates -> the widget keeps only the first five
+  (let [frames (atom [])
+        cands (mapv (fn [i] (str "d" i "/")) (range 7))
+        suggest (fn [_] cands)]
+    (tui/input (input-opts [:enter] frames
+                           {:value "d"
+                            :suggest-fn suggest}))
+    (let [seen (string/join "\n" (map style/strip @frames))]
+      (is (string/includes? seen "d4/"))
+      (is (not (string/includes? seen "d5/")))
+      (is (not (string/includes? seen "d6/"))))))
+
+(deftest test-input-suggest-help-line
+  (let [frames (atom [])
+        f (do (tui/input (input-opts [:enter] frames {:suggest-fn (fn [_] [])}))
+              (style/strip (first @frames)))]
+    (is (string/includes? f "tab complete"))
+    (is (string/includes? f "↑/↓ navigate"))
+    (is (string/includes? f "enter submit"))
+    (is (string/includes? f "esc cancel"))))
+
+(deftest test-input-plain-help-line-unchanged
+  ;; without :suggest-fn the help line keeps its original bindings
+  (let [frames (atom [])]
+    (tui/input (input-opts [:enter] frames {}))
+    (let [f (style/strip (first @frames))]
+      (is (string/includes? f "enter submit"))
+      (is (string/includes? f "esc cancel"))
+      (is (not (string/includes? f "tab complete"))))))
+
 (deftest test-run-eof-terminates
   (let [app {:init {:a 1}
              :update (fn [state _] [state nil])
