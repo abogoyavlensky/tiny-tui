@@ -1,0 +1,44 @@
+;; tiny-tui.path — filesystem path completion for the input widget's
+;; :suggest-fn. The matching logic (split-input, candidates) is pure and
+;; unit-tested with injected entries; only suggest-fn touches the filesystem,
+;; via the os module. That impure factory is the one sanctioned exception to
+;; tiny-tui's "terminal I/O confined to screen and key/read" rule — it reads
+;; directory listings, never the terminal.
+
+(ns tiny-tui.path
+  (:require [string]))
+
+(defn split-input
+  "Split typed path text into {:dir ... :prefix ...}: :dir is everything up to
+   and including the last '/' (\"\" when there is no slash, i.e. the current
+   directory), :prefix is the partial name after it."
+  [text]
+  (let [i (string/last-index-of text "/")]
+    (if (nil? i)
+      {:dir ""
+       :prefix text}
+      {:dir (subs text 0 (inc i))
+       :prefix (subs text (inc i))})))
+
+(defn- keep-entry? [prefix dirs-only? entry]
+  (and (string/starts-with? (:name entry) prefix)
+       (or (not dirs-only?) (:dir? entry))
+       ;; Hide dotfiles unless the user is explicitly typing a dot prefix.
+       (or (string/starts-with? prefix ".")
+           (not (string/starts-with? (:name entry) ".")))))
+
+(defn candidates
+  "Full replacement strings for the typed `text`, drawn from `entries` (a seq
+   of {:name ... :dir? bool}, injected so this stays pure). Matching is
+   case-sensitive prefix (shell-style); dotfiles are hidden unless the prefix
+   itself starts with '.'; with {:dirs-only? true} non-directories are dropped.
+   Each candidate is (str dir name) with a trailing '/' for directories, so
+   accepting one and typing again descends into it. Returns a sorted vector."
+  [entries text opts]
+  (let [{:keys [dir prefix]} (split-input text)
+        dirs-only? (:dirs-only? opts)]
+    (->> entries
+         (filter (fn [e] (keep-entry? prefix dirs-only? e)))
+         (map (fn [e] (str dir (:name e) (when (:dir? e) "/"))))
+         (sort)
+         (vec))))

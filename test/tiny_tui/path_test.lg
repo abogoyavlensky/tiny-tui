@@ -1,0 +1,58 @@
+(ns tiny-tui.path-test
+  (:require [clojure.test :refer :all]
+            [tiny-tui.path :as path]))
+
+(deftest test-split-input
+  (is (= {:dir "src/"
+          :prefix "ti"} (path/split-input "src/ti")))
+  (is (= {:dir ""
+          :prefix "ti"} (path/split-input "ti")))
+  (is (= {:dir "src/"
+          :prefix ""} (path/split-input "src/")))
+  (is (= {:dir "~/"
+          :prefix "pro"} (path/split-input "~/pro")))
+  (is (= {:dir ""
+          :prefix ""} (path/split-input ""))))
+
+(def entries
+  [{:name "src"
+    :dir? true}
+   {:name "start"
+    :dir? true}
+   {:name "notes.txt"
+    :dir? false}
+   {:name "README.md"
+    :dir? false}
+   {:name ".git"
+    :dir? true}
+   {:name ".gitignore"
+    :dir? false}])
+
+(deftest test-candidates-prefix-match-sorted
+  ;; prefix "s" matches both dirs (sorted); dirs get a trailing slash
+  (is (= ["src/" "start/"] (path/candidates entries "s" {})))
+  ;; a file prefix keeps files, no trailing slash
+  (is (= ["notes.txt"] (path/candidates entries "n" {}))))
+
+(deftest test-candidates-case-sensitive
+  ;; upper-case prefix matches the upper-case name; lower-case does not
+  (is (= ["README.md"] (path/candidates entries "R" {})))
+  (is (= [] (path/candidates entries "r" {}))))
+
+(deftest test-candidates-dirs-only
+  (is (= ["src/" "start/"] (path/candidates entries "" {:dirs-only? true}))))
+
+(deftest test-candidates-hides-dotfiles-unless-dot-prefix
+  ;; dotfiles are hidden for a normal prefix ...
+  (is (= ["README.md" "notes.txt" "src/" "start/"]
+         (path/candidates entries "" {})))
+  (is (= ["src/" "start/"] (path/candidates entries "s" {})))
+  ;; ... and shown once the prefix itself starts with "."
+  (is (= [".git/" ".gitignore"] (path/candidates entries "." {}))))
+
+(deftest test-candidates-include-dir-part
+  ;; the candidate is a full replacement for the typed text, not a fragment
+  (is (= ["src/tiny_tui/"]
+         (path/candidates [{:name "tiny_tui"
+                            :dir? true}]
+                          "src/ti" {}))))

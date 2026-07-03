@@ -147,7 +147,7 @@ Impure factory:
 - Create: `src/tiny_tui/path.lg`
 - Create: `test/tiny_tui/path_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   For `split-input`: `"src/ti"` → `{:dir "src/" :prefix "ti"}`; `"ti"` → `{:dir "" :prefix "ti"}`; `"src/"` → `{:dir "src/" :prefix ""}`; `"~/pro"` → `{:dir "~/" :prefix "pro"}`.
   For `candidates` with injected entries:
   - Prefix filtering is case-sensitive; results sorted.
@@ -156,18 +156,18 @@ Impure factory:
   - Dotfile entries hidden for prefix `""`/`"s"`, shown for prefix `"."`.
   - Candidates include the `:dir` part: entries `[{:name "tiny_tui" :dir? true}]` with text `"src/ti"` → `["src/tiny_tui/"]`.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL (namespace doesn't exist yet).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Create `path.lg` with `split-input` and `candidates` only (pure, `defn` order bottom-up). Namespace docstring states the purity split: logic here, `os` access only in `suggest-fn` (Task 4).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
   `git commit -m "feat: add pure path completion logic"`
 
 ### Task 4: Impure suggest-fn factory
