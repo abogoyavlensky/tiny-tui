@@ -305,6 +305,11 @@ lgx run examples/input_path.lg      # tui/input with path autocomplete
 lgx run examples/deps_actions.lg    # actions + confirmation
 ```
 
+## Projects using tiny-tui
+
+- [skl](https://github.com/abogoyavlensky/skl) - a minimal CLI tool to fetch and install agent skills
+- [wtr](https://github.com/abogoyavlensky/wtr) - an interactive mode in a small tool to manage multiple git worktrees
+
 ## Development
 
 Install dependencies with [mise](https://mise.jdx.dev/getting-started.html)
