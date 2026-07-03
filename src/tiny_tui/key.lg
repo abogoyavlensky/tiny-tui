@@ -2,14 +2,22 @@
 ;; keywords for special keys (:up :down :enter :esc :ctrl-c ...), plain
 ;; one-character strings for printable text.
 ;;
-;; Only `read` touches the terminal; `parse` is pure and unit-tested.
-;; Control bytes are built with (char code) rather than written literally
-;; in source (mirrors legmacs.keys).
+;; Only `read` touches the terminal; `parse` and `parse-alt` are pure and
+;; unit-tested. Control bytes are built with (char code) rather than written
+;; literally in source (mirrors legmacs.keys).
+;;
+;; Alt/Option chords via burst lookahead: macOS terminals send Option+Left as
+;; `ESC b`, Option+Backspace as `ESC DEL`, etc. The tokenizer emits the ESC on
+;; its own, so `read` peeks with term/key-pending?: a bare ESC with bytes still
+;; buffered in the same burst is an Alt chord (translated by parse-alt); a lone
+;; ESC (nothing pending) stays a plain :esc.
 
 (ns tiny-tui.key
   (:require [term]))
 
 (def ^:private ESC (str (char 27)))
+;; BEL doubles as term/read-key's synthetic SIGWINCH wake byte (see `special`).
+(def ^:private BEL (str (char 7)))
 
 (def ^:private special
   (into {}
@@ -19,9 +27,17 @@
                 ["[B" :down] ["OB" :down]
                 ["[C" :right] ["OC" :right]
                 ["[D" :left] ["OD" :left]
+                ;; Word motion: modifier 3 = Alt/Option, 5 = Ctrl. Terminals
+                ;; that keep Alt+Arrow as a CSI (Ghostty/kitty) and Ctrl+Arrow
+                ;; on Linux land here; macOS Option+Arrow arrives as ESC b / f
+                ;; and is handled by parse-alt instead.
+                ["[1;3D" :word-left] ["[1;5D" :word-left]
+                ["[1;3C" :word-right] ["[1;5C" :word-right]
                 ["[H" :home] ["OH" :home] ["[1~" :home] ["[7~" :home]
                 ["[F" :end] ["OF" :end] ["[4~" :end] ["[8~" :end]
                 ["[3~" :delete]
+                ;; Alt+Delete (…;3…) and Ctrl+Delete (…;5…) both delete a word.
+                ["[3;3~" :delete-word] ["[3;5~" :delete-word]
                 ["[5~" :pageup]
                 ["[6~" :pagedown]])
           ;; Enter arrives as CR in raw mode; LF shows up when input passed
@@ -50,7 +66,51 @@
       (and code (<= 1 code 26)) (ctrl-key code)
       :else k)))
 
+;; Alt/Option chord table, keyed by the *parsed* inner token — string keys for
+;; bare letters (macOS Option+Left/Right => ESC b / ESC f, Alt+d) and keyword
+;; keys for the already-parsed arrows/backspace/esc. A doubled ESC collapses to
+;; a plain :esc so a stray Option press can never cancel a half-typed input.
+(def ^:private alt-special
+  {"b" :word-left
+   "f" :word-right
+   "d" :delete-word
+   :left :word-left
+   :right :word-right
+   :backspace :backspace-word
+   :esc :esc})
+
+(defn parse-alt
+  "Translate an Alt/Option chord into a message: `k` is the token that
+   followed a same-burst ESC. Parse the inner token, then map it through the
+   alt table (Option+Left/Right/Backspace, Alt+b/f/d => word ops; doubled ESC
+   => :esc). Any other Alt+printable becomes an inert :alt-<char> (never :esc,
+   so a stray Option key can't cancel a half-typed input); an Alt + unmapped
+   special key (e.g. Alt+Enter) falls through to the inner parse."
+  [k]
+  (let [inner (parse k)]
+    (cond
+      (contains? alt-special inner) (get alt-special inner)
+      (and (string? inner) (= 1 (count inner))) (keyword (str "alt-" inner))
+      :else inner)))
+
 (defn read
-  "Block for one key. Returns a message, or nil at end of input."
+  "Block for one key. Returns a message, or nil at end of input.
+
+   Alt/Option chords via burst lookahead: a bare ESC with more bytes already
+   buffered (term/key-pending?) came in the same burst as the next token, so
+   it's an Alt chord — read the next token and translate the pair with
+   parse-alt. A lone ESC (nothing pending) stays a plain :esc; a second read
+   that races to EOF also falls back to :esc.
+
+   term/key-pending? is also true when only a SIGWINCH resize wake is queued
+   (not a real key). In that case the second read yields the synthetic BEL, so
+   fall back to :esc — the resize is dropped harmlessly (run re-reads the
+   terminal size every loop) rather than eating the user's cancel."
   []
-  (some-> (term/read-key) parse))
+  (when-let [tok (term/read-key)]
+    (if (and (= tok ESC) (term/key-pending?))
+      (let [tok2 (term/read-key)]
+        (if (or (nil? tok2) (= tok2 BEL))
+          :esc
+          (parse-alt tok2)))
+      (parse tok))))
