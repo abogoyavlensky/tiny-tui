@@ -252,6 +252,37 @@
     (is (= true (:confirmed? (first @calls))))
     (is (= [{:name "tiny-tui"} {:name "lgx"}] @items))))
 
+(deftest test-on-action-runs-nested-input-prompt
+  ;; The nested-prompt pattern with-inline-session enables on a real terminal:
+  ;; a select's :on-action handler runs its own tui/input and folds the input's
+  ;; result into the outer select's status, which keeps looping. Here every run
+  ;; is bare (:screen false), so this guards the data flow independent of the
+  ;; session machinery.
+  (let [frames (atom [])
+        submitted (atom nil)
+        handler (fn [ev]
+                  (let [text (tui/input {:title "Rename"
+                                         :value (:name (:item ev))
+                                         :read-key-fn (scripted ["!" :enter])
+                                         :render-fn (fn [_] nil)
+                                         :screen false})]
+                    (reset! submitted text)
+                    {:status (str "Renamed to " text)}))]
+    (tui/select {:title "Items"
+                 :items [{:name "alpha"} {:name "beta"}]
+                 :item->text :name
+                 :actions [{:id :rename
+                            :key "r"
+                            :label "rename"}]
+                 :on-action handler
+                 :read-key-fn (scripted ["r" "q"])
+                 :render-fn (fn [s] (swap! frames conj s))
+                 :screen false})
+    ;; nested input submitted the prefilled "alpha" with a typed "!" appended
+    (is (= "alpha!" @submitted))
+    ;; the outer select kept looping and rendered the folded-in status
+    (is (some (fn [f] (string/includes? f "Renamed to alpha!")) @frames))))
+
 (deftest test-action-without-handler-still-exits
   ;; regression: with no :on-action, an action returns and exits as before
   (is (= {:type :action

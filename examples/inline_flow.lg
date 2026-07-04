@@ -1,0 +1,65 @@
+;; Inline session demo: a whole flow — pick a task, rename it via a prompt
+;; nested inside the select's :on-action handler, then confirm — all sharing a
+;; single raw-mode span. Every widget renders in place where the previous one
+;; sat (no alternate screen), erasing itself as the next appears; the summary
+;; prints there too, after the session ends.
+;;
+;; Contrast with :inline? true on a single widget: there each widget enters and
+;; leaves raw mode on its own, so chaining them flickers and a prompt nested in
+;; :on-action would tear down the outer select. with-inline-session owns the
+;; terminal once for the whole flow instead.
+;;
+;; What a healthy run shows (see docs/pty-verification.md): one hide-cursor /
+;; show-cursor pair around the WHOLE flow, zero alternate-screen switches
+;; (no ESC[?1049h), each frame beginning with a carriage-return, each widget
+;; erased with a clear-below (ESC[J) before the next, and the final println
+;; landing where the widgets were.
+;;
+;; Run from the repo root: lgx run examples/inline_flow.lg
+
+(ns examples.inline-flow
+  (:require [tiny-tui.core :as tui]))
+
+(defn rename-handler [items]
+  ;; :on-action handler: prompt (nested in the same session) for a new name for
+  ;; the highlighted task, swap it into the list in place, and report a status.
+  ;; Returning {:items ...} keeps the select looping with the updated list; a
+  ;; bare {:status ...} leaves the list unchanged.
+  (fn [ev]
+    (let [new-name (tui/input {:title (str "Rename \"" (:item ev) "\"")
+                               :value (:item ev)})]
+      (if (and new-name (not= new-name (:item ev)))
+        (let [renamed (assoc @items (:index ev) new-name)]
+          (reset! items renamed)
+          {:items renamed
+           :status (str "Renamed to " new-name)})
+        {:status "Rename cancelled"}))))
+
+(defn -main []
+  (println "Manage tasks (inline session):")
+  (let [items (atom ["write docs" "fix bug" "ship release"])
+        outcome
+        (tui/with-inline-session
+          (let [picked (tui/select {:title "Tasks"
+                                    :items @items
+                                    :actions [{:id :rename
+                                               :key "r"
+                                               :label "rename"}]
+                                    :on-action (rename-handler items)})]
+            (if (= :select (:type picked))
+              (if (tui/confirm {:title (str "Apply changes to \"" (:item picked) "\"?")
+                                :confirm-label "apply"
+                                :cancel-label "discard"})
+                {:status :applied
+                 :item (:item picked)}
+                {:status :discarded
+                 :item (:item picked)})
+              {:status :cancelled})))]
+    ;; Print the summary AFTER the session — println inside it would run in raw
+    ;; mode, where a bare \n won't return the carriage.
+    (case (:status outcome)
+      :applied (println "Applied. Selected:" (:item outcome))
+      :discarded (println "Discarded changes for:" (:item outcome))
+      :cancelled (println "No task chosen."))))
+
+(when-not *compiling-aot* (-main))

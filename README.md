@@ -164,7 +164,11 @@ Options: `:title`, `:message`, `:confirm-label`, `:cancel-label`.
 `(tui/input opts) -> string` or `nil`
 
 Reads one line of text. Returns the string on enter, `nil` on cancel.
-Left/right/home/end move the cursor; backspace and delete edit.
+Left/right/home/end move the cursor and backspace/delete edit. Word keys:
+Option/Alt+← and +→ (or Ctrl+← / Ctrl+→) jump by word, Option+Backspace or
+Ctrl-W deletes the word before the cursor, and Alt+d (or Ctrl+Delete) the word
+after it. A word is a run of ASCII letters and digits, so `.agents/skills`
+jumps and deletes per path segment.
 
 ```clojure
 (tui/input {:title "New name" :placeholder "type a name"
@@ -225,7 +229,8 @@ The program loop the widgets build on. An app is three functions:
 `:update` returns `[next-state event]`. A nil event keeps the loop running;
 any other value stops it and becomes `run`'s return event. `:view` returns the
 string to draw. Messages are keywords for special keys (`:up :down :left
-:right :enter :esc :backspace :delete :home :end`, and `:ctrl-x` for control
+:right :enter :esc :backspace :delete :home :end`; `:word-left :word-right
+:backspace-word :delete-word` for the word keys; and `:ctrl-x` for control
 keys) and one-character strings for printable keys. The loop handles Ctrl-C,
 resize, raw mode, the alternate screen, and cleanup on exceptions, and adds
 `:tui/size` (a `[cols rows]` vector) to the state before each `:view`.
@@ -237,6 +242,35 @@ any entry point to draw at the cursor instead (gum/fzf style) and erase the
 widget on exit, so your next `println` lands where it was. Use it for small
 pickers; a widget taller than the terminal cannot scroll back, so keep the
 default for large UIs.
+
+### Inline sessions
+
+Per-widget `:inline?` enters and leaves raw mode for each widget, so chaining
+several flickers, and a prompt nested inside an `:on-action` handler would tear
+down the outer widget. Wrap the whole flow in `tui/with-inline-session`
+instead: one raw-mode span that every widget shares, rendering in place and
+erasing itself as the next appears. Inside a session no per-widget `:inline?`
+is needed.
+
+```clojure
+(let [items (atom ["write docs" "fix bug"])   ; string items (default :item->text)
+      picked (tui/with-inline-session
+               (tui/select
+                {:title "Tasks" :items @items
+                 :actions [{:id :rename :key "r" :label "rename"}]
+                 ;; a prompt nested in the handler renders over the select,
+                 ;; erases itself, and the select repaints — no :returns? dance
+                 :on-action (fn [ev]
+                              (let [name (tui/input {:title "Rename"
+                                                     :value (:item ev)})]
+                                (swap! items assoc (:index ev) name)
+                                {:items @items :status (str "Renamed to " name)}))}))]
+  ;; Print AFTER the session: a println inside it runs in raw mode, where a
+  ;; bare \n won't return the carriage.
+  (println "Picked:" picked))
+```
+
+See `examples/inline_flow.lg` for a full select → nested rename → confirm flow.
 
 ### Testing hooks
 
@@ -306,6 +340,7 @@ lgx run examples/deps_manager.lg    # delete-in-place with :on-action
 lgx run examples/multi_select.lg    # multi-select with checkboxes
 lgx run examples/columns_select.lg  # aligned tabular select (layout/columns)
 lgx run examples/inline_select.lg   # tui/select, inline (no alternate screen)
+lgx run examples/inline_flow.lg     # chained select → nested prompt → confirm in one session
 lgx run examples/confirm_delete.lg  # tui/confirm
 lgx run examples/input_name.lg      # tui/input with validation
 lgx run examples/input_path.lg      # tui/input with path autocomplete

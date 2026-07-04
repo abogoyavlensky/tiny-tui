@@ -1,6 +1,8 @@
-# Word Editing & Inline Session Implementation Plan
+# Word Editing & Inline Session Implementation Plan — ✅ COMPLETED
 
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+> **Status:** All 8 tasks complete. See the Implementation Summary at the end.
 
 **Goal:** Make word-wise cursor motion and deletion work in the input widget on macOS (and everywhere else), and add `with-inline-session` so a whole multi-widget flow — including prompts nested inside `:on-action` handlers — runs inline in one raw-mode span.
 
@@ -141,7 +143,7 @@ capture/cleanup/rethrow instead of try/finally.
 - Modify: `src/tiny_tui/key.lg`
 - Test: `test/tiny_tui/key_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   In `key_test.lg`, following the existing `(str ESC ...)` style:
   - `key/parse`: `(str ESC "[1;3D")` and `(str ESC "[1;5D")` → `:word-left`;
     `"[1;3C"`/`"[1;5C"` → `:word-right`; `"[3;3~"` → `:delete-word`.
@@ -152,11 +154,11 @@ capture/cleanup/rethrow instead of try/finally.
     `"x"` → `:alt-x`, `(str (char 13))` → `:enter` (unmapped keyword falls
     through).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — unknown `parse-alt`, CSI entries unmapped.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   - Add the five CSI pairs to the `special` map's pair list.
   - Add a private `alt-special` map and `parse-alt`: parse the inner token,
     look the result up in `alt-special` (string and keyword keys), else
@@ -167,13 +169,16 @@ capture/cleanup/rethrow instead of try/finally.
     docstring to explain the burst-lookahead rule (same-burst ESC+key =
     Alt chord; lone ESC = escape).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -m "Add word-motion key messages and Alt-chord parsing"`
+  Codex review (P2s addressed): added Ctrl+Delete `[3;5~` alongside Alt+Delete
+  `[3;3~`; `read` now falls back to `:esc` when the pending byte is only a
+  SIGWINCH resize wake (BEL) so Esc-during-resize still cancels.
 
 ### Task 2: Input widget — word motion and word deletion
 
@@ -181,7 +186,7 @@ capture/cleanup/rethrow instead of try/finally.
 - Modify: `src/tiny_tui/input.lg`
 - Test: `test/tiny_tui/input_test.lg`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
   Using states built via `input/create` + `:value` (cursor starts at end):
   - `:word-left` on `"foo bar"` cursor 7 → cursor 4; again → 0; on
     `".agents/skills"` from the end → 8 (path segments); at 0 → stays 0.
@@ -194,11 +199,11 @@ capture/cleanup/rethrow instead of try/finally.
     → no-op.
   - All return a nil event.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL — messages fall through the `:else` no-op branch.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   Private `word-char?` (ASCII alnum via int ranges; comment the non-ASCII
   limitation), `prev-word-start`, `next-word-end` (skip separators, then
   word chars), then wire `:word-left`/`:word-right` through `move` and
@@ -206,13 +211,14 @@ capture/cleanup/rethrow instead of try/finally.
   `:error`. Keep helpers above `update` (no forward references). Update the
   `update` docstring.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -m "Add word motion and word deletion to input widget"`
+  Codex review: clean, no findings.
 
 ### Task 3: List filter — delete trailing query word
 
@@ -220,34 +226,37 @@ capture/cleanup/rethrow instead of try/finally.
 - Modify: `src/tiny_tui/list.lg`
 - Test: `test/tiny_tui/list_test.lg`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
   On a filterable list with query `"foo bar"`, `:backspace-word` (and
   `:ctrl-w`) → query `"foo "` and the list refiltered; with query `""` → a
   no-op that still returns nil event.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
   Run: `lgx test`
   Expected: FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
   In the filter branch next to `:backspace`, handle `:backspace-word` and
   `:ctrl-w`: drop trailing word chars and the separators after them (reuse
   the same word-boundary rule as input — a tiny local helper is fine, the
   query has no cursor), then `refilter`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -m "Support word delete in list filter query"`
+  Codex review (P3 addressed): added `:backspace-word`/`:ctrl-w` to
+  `reserved-keys` so `bindings` no longer advertises a filter action bound to
+  a key the word-delete branch now consumes (guarded by a new test).
 
 ### Task 4: PTY verification of word editing
 
 **Files:** none (verification only; fix regressions where found)
 
-- [ ] **Step 1: Verify word keys end-to-end on a pty**
+- [x] **Step 1: Verify word keys end-to-end on a pty**
   Using `examples/input_name.lg` per `docs/pty-verification.md`, assert the
   final printed result reflects the edit (strip escapes with the sed filter):
   - Option+Backspace: type a two-word value, `\033\177`, enter → second word
@@ -256,22 +265,32 @@ capture/cleanup/rethrow instead of try/finally.
   - Option+Left + `:delete-word`: `\033b\033d` at end of `"foo bar"` then
     enter → `"foo "`.
   - CSI variant: `\033[1;5D\033d` behaves the same.
+  Verified: all four printed `Hello, foo !`. Also confirmed Option+Right
+  (`\033f`) at end + `:delete-word` is a no-op (`Hello, foo bar!`). Keys were
+  gated behind a leading `sleep` so raw mode is active before they arrive,
+  with each ESC-chord kept in one `printf` burst so the `key-pending?`
+  lookahead sees both bytes.
 
-- [ ] **Step 2: Verify Esc still cancels**
+- [x] **Step 2: Verify Esc still cancels**
   A lone `\033` (followed by no bytes for the widget to read — end the
   printf input there) must cancel the input, and `q`/Ctrl-C paths on
   `examples/inline_select.lg` must still work.
+  Verified: lone ESC and type-then-ESC both printed `Cancelled.`; Alt+x
+  (`\033x`) is inert (printed `Hello, hi!` — never cancels, never inserts);
+  on `inline_select.lg` q / Ctrl-C / esc all printed `No scoops today.` with
+  the cursor restored (`ESC[?25h` present, `ESC[?1049` count 0), and
+  down+enter selected chocolate.
 
-- [ ] **Step 3: Commit any fixes**
-  Only if regressions were found and fixed:
-  `git commit -m "Fix word-key handling found in pty verification"`
+- [x] **Step 3: Commit any fixes**
+  No regressions found — the Task 1 `read` BEL/esc guard already handles the
+  Esc path, so nothing new to commit here.
 
 ### Task 5: Screen — inline session primitives
 
 **Files:**
 - Modify: `src/tiny_tui/screen.lg`
 
-- [ ] **Step 1: Implement session primitives**
+- [x] **Step 1: Implement session primitives**
   In the inline section of `screen.lg`, ordered bottom-up:
   - Private `session-active?` atom (false), public `(session?)` reader.
   - `erase-widget!` — write `clear-below` + `"\r"`, flush (the cursor rests
@@ -283,14 +302,17 @@ capture/cleanup/rethrow instead of try/finally.
     capture/cleanup/rethrow pattern, unset the flag, `shutdown-inline!`,
     return/rethrow. Do **not** use try/finally (let-go quirk).
   - `with-inline-session` macro, same shape as `with-inline-screen`.
+  Sanity-checked off-tty: `session?` defaults false; the macro expands to
+  `(with-inline-session* (fn [] (do ...)))`.
 
-- [ ] **Step 2: Run full test suite**
+- [x] **Step 2: Run full test suite**
   Run: `lgx test`
   Expected: PASS (no behavior change yet).
 
-- [ ] **Step 3: Format and commit**
+- [x] **Step 3: Format and commit**
   Run: `lgx fmt`
   `git commit -m "Add inline session primitives to screen"`
+  Codex review: clean, no findings.
 
 ### Task 6: Core — session-aware run and nested-prompt flow test
 
@@ -298,7 +320,7 @@ capture/cleanup/rethrow instead of try/finally.
 - Modify: `src/tiny_tui/core.lg`
 - Test: `test/tiny_tui/core_test.lg`
 
-- [ ] **Step 1: Write failing headless flow test**
+- [x] **Step 1: Write failing headless flow test**
   In `core_test.lg` (`:screen false`, scripted `:read-key-fn`s): a
   `tui/select` whose `:on-action` handler itself calls `tui/input` with its
   own scripted keys and returns `{:status ...}` from the input's result —
@@ -306,13 +328,15 @@ capture/cleanup/rethrow instead of try/finally.
   input's submitted text comes through. This locks in the nested-prompt
   pattern the session enables on a real terminal.
 
-- [ ] **Step 2: Run test**
+- [x] **Step 2: Run test**
   Run: `lgx test`
   Expected: PASS already with `:screen false` (each run is bare) — this test
   guards the pattern; if it fails, the design assumption is wrong: stop and
   re-check.
+  Passed immediately (nested input submitted `alpha!`, outer status folded
+  in), confirming the data-flow assumption.
 
-- [ ] **Step 3: Implement session branch**
+- [x] **Step 3: Implement session branch**
   - In `run`, between the `:screen false` and `:inline?` branches: when
     `(screen/session?)`, call `run-loop` forcing inline rendering (default
     `render-fn` to `screen/render-inline!`), then `screen/erase-widget!`
@@ -323,20 +347,21 @@ capture/cleanup/rethrow instead of try/finally.
     `confirm`/`multi-select` pointing at `with-inline-session` for chained
     flows; note the raw-mode `println` gotcha in the macro's docstring.
 
-- [ ] **Step 4: Run full test suite**
+- [x] **Step 4: Run full test suite**
   Run: `lgx test`
   Expected: PASS.
 
-- [ ] **Step 5: Format and commit**
+- [x] **Step 5: Format and commit**
   Run: `lgx fmt`
   `git commit -m "Add with-inline-session for chained and nested inline widgets"`
+  Codex review: clean, no findings.
 
 ### Task 7: Inline flow example + pty verification of the session
 
 **Files:**
 - Create: `examples/inline_flow.lg`
 
-- [ ] **Step 1: Write the example**
+- [x] **Step 1: Write the example**
   Modeled on `examples/inline_select.lg`: inside `tui/with-inline-session`,
   a select over a few items with one `:on-action` action (`r` = rename)
   whose handler calls `tui/input` (prefilled with the item) and returns
@@ -344,7 +369,7 @@ capture/cleanup/rethrow instead of try/finally.
   outcome *after* the session. Header comment explains what to look for
   (widgets replacing each other in place, no alternate screen).
 
-- [ ] **Step 2: PTY-verify the session**
+- [x] **Step 2: PTY-verify the session**
   Per the inline checklist in `docs/pty-verification.md`:
   - Happy path (navigate, rename via nested input, enter, confirm `y`):
     `ESC[?25l`/`ESC[?25h` once each, **zero** `ESC[?1049h`, frames begin
@@ -354,10 +379,20 @@ capture/cleanup/rethrow instead of try/finally.
     q at the select, Ctrl-C at each stage — cursor restored every time.
   - Throwing path: a temporary variant whose handler throws must still show
     the cursor and restore cooked mode before the error surfaces.
+  Verified all three. Happy path: `Applied. Selected: write docs!` with
+  hide/show-cursor 1 each, alt-screen 0, `ESC[J` ×5. Cancel paths: esc in the
+  nested input left the outer select running (status `Rename cancelled`) then
+  `q` → `No task chosen.`; q / Ctrl-C at select and Ctrl-C at confirm all ended
+  gracefully — hide=show=1, alt=0 every time. Throwing path (temp
+  `inline_flow_throw.lg`, since deleted): `ESC[?25h` present, alt=0, `kaboom`
+  surfaced, post-session code never ran. Note: the nested-input esc test needs
+  a delay before the following key, else the burst-lookahead reads ESC+key as
+  an Alt chord instead of a cancel.
 
-- [ ] **Step 3: Format and commit**
+- [x] **Step 3: Format and commit**
   Run: `lgx fmt`
   `git commit -m "Add inline flow example"`
+  Codex review: clean (ran its own pty smoke test).
 
 ### Task 8: Documentation
 
@@ -365,7 +400,7 @@ capture/cleanup/rethrow instead of try/finally.
 - Modify: `README.md`
 - Modify: `docs/pty-verification.md`
 
-- [ ] **Step 1: Update docs**
+- [x] **Step 1: Update docs**
   - README: word-editing key bindings for the input widget (Option/Alt +
     arrows, Option+Backspace, Ctrl-W, Alt+d), and an "Inline sessions"
     subsection with a short `with-inline-session` snippet, the nested
@@ -375,13 +410,20 @@ capture/cleanup/rethrow instead of try/finally.
     session paragraph under the inline section (what a healthy session run
     shows: one hide/show cursor pair around the whole flow, per-widget
     `ESC[J` erasures, no `1049`).
+  Also added the run word messages (`:word-left` etc.), an `inline_flow.lg`
+  examples-list entry, and a scripting caveat (gate keys behind a `sleep`; an
+  ESC with a byte right after is an Alt chord, not a cancel).
 
-- [ ] **Step 2: Final full check**
+- [x] **Step 2: Final full check**
   Run: `lgx fmt && lgx test`
   Expected: clean format, all tests PASS.
+  Result: clean format; 202 tests, 410 assertions, 0 failures.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
   `git commit -m "Document word editing keys and inline sessions"`
+  Codex review (P2 fixed): the inline-session README snippet mixed
+  `:item->text :name` (map items) with string handling; switched it to string
+  items so it stays consistent with `examples/inline_flow.lg`.
 
 ## Out of scope / follow-ups
 
@@ -391,3 +433,55 @@ capture/cleanup/rethrow instead of try/finally.
 - Unicode-aware word boundaries.
 - Changing let-go's tokenizer to emit Alt chords as single tokens (the
   lookahead makes it unnecessary).
+
+## Implementation Summary
+
+All eight tasks landed; final suite **202 tests, 410 assertions, 0 failures**.
+Seven commits (one per task, verification tasks folded into their code):
+
+- `f5fb1e1` word-motion key messages + Alt-chord parsing (`key.lg`)
+- `a60e338` word motion / deletion in the input widget (`input.lg`)
+- `9a0b966` word delete in the list filter query (`list.lg`)
+- `c65b845` inline session primitives (`screen.lg`)
+- `c1284fc` `with-inline-session` + session-aware `run` (`core.lg`)
+- `5785d23` `examples/inline_flow.lg`
+- `c4ba5af` README + pty-verification docs
+
+**What shipped**
+
+1. *Word editing.* `key/read` gained an impure burst-lookahead: a bare `ESC`
+   with bytes still buffered (`term/key-pending?`) is an Alt/Option chord,
+   translated by the new pure `parse-alt`; a lone `ESC` stays `:esc`. New
+   messages `:word-left/:word-right/:backspace-word/:delete-word` come from
+   both macOS `ESC b/f/d/DEL` and CSI `[1;3/;5…` forms. The input widget moves
+   and deletes by word (ASCII letter/digit boundaries, so path segments count),
+   and the filterable list drops its trailing query word on
+   `:backspace-word`/`:ctrl-w`.
+2. *Inline sessions.* `screen` got a private `session-active?` atom with a
+   `session?` reader, `erase-widget!`, and `with-inline-session*` + macro
+   (capture/cleanup/rethrow, no try/finally). `core/run` now has four ordered
+   branches (`:screen false` → session → `:inline?` → full screen); inside a
+   session a widget renders inline and erases its own frame, so chained prompts
+   and prompts nested in an `:on-action` handler share one raw-mode span.
+   `core` re-exports `with-inline-session`.
+
+**Issues found and fixed (all via the codex review checkpoint)**
+
+- *Task 1:* mapped Ctrl+Delete `[3;5~` alongside Alt+Delete `[3;3~`, and made
+  `read` fall back to `:esc` when the only pending byte is a SIGWINCH resize
+  wake (BEL) — so Esc-during-resize still cancels.
+- *Task 3:* added `:backspace-word`/`:ctrl-w` to the list's `reserved-keys` so
+  `bindings` no longer advertises a filter action bound to a now-consumed key.
+- *Task 8:* fixed an internally inconsistent README snippet (map items vs.
+  string handling).
+
+**Verification.** Beyond `lgx test`, every terminal-touching change was driven
+on a real pty: word keys end-to-end (Option+Backspace / Ctrl-W / word-jump +
+delete-word / CSI variants), Esc-still-cancels and the stray-Option-is-inert
+property, and the full session example — happy path (one hide/show-cursor pair,
+zero alternate-screen), all cancel paths (esc in the nested prompt leaves the
+outer select running; q / Ctrl-C restore the cursor), and the throwing path
+(cleanup runs before the error surfaces). One gotcha worth carrying forward:
+scripted pty keys must be gated behind a `sleep` (raw mode first), and an `ESC`
+meant as a cancel must not be immediately followed by another byte, or the
+lookahead reads it as an Alt chord.

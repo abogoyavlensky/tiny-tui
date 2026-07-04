@@ -12,7 +12,10 @@
 ;;
 ;; :inline? true renders in place at the cursor (gum/fzf style) and erases
 ;; the widget on exit, instead of taking over the alternate screen — best
-;; for small pickers that fit on screen.
+;; for small pickers that fit on screen. To run several widgets — or a prompt
+;; nested inside an :on-action handler — in one raw-mode span, wrap them in
+;; tui/with-inline-session (they render inline and erase in place; no per-widget
+;; :inline? needed).
 ;;
 ;; Testing hooks (all optional): :read-key-fn, :render-fn, :screen false —
 ;; they let whole flows run headlessly with scripted keys.
@@ -58,12 +61,38 @@
                       [next-state event]))))))))
 
 (defn run
-  "Run a TUI program (see namespace docstring). Returns [final-state event]."
+  "Run a TUI program (see namespace docstring). Returns [final-state event].
+   Four render paths, checked in order:
+     :screen false      bare run-loop (testing hook — no terminal at all)
+     inside a session   run-loop rendering in place, then erase this widget's
+                        own frame — the session (not the widget) owns raw mode,
+                        so widgets replace each other and prompts can nest
+     :inline? true      a one-widget inline span (enters/erases on its own)
+     otherwise          a full-screen alternate-screen span"
   [opts]
   (cond
     (false? (:screen opts)) (run-loop opts)
+    (screen/session?)
+    (let [result (run-loop (assoc opts :render-fn
+                                  (or (:render-fn opts) screen/render-inline!)))]
+      (screen/erase-widget!)
+      result)
     (:inline? opts) (screen/with-inline-screen (run-loop opts))
     :else (screen/with-screen (run-loop opts))))
+
+(defmacro with-inline-session
+  "Run `body` as one inline session so a whole flow of widgets — chained
+   prompts, or a prompt nested inside a select's :on-action handler — shares a
+   single raw-mode span instead of each entering and leaving on its own;
+   cleanup is guaranteed even when an exception escapes. Widgets render in
+   place, replacing each other, and erase themselves on exit. Re-exports
+   tiny-tui.screen/with-inline-session*.
+
+   Gotcha: println inside a session runs in raw mode, so a bare \\n won't return
+   the carriage — print results after the session (widgets erase themselves
+   anyway)."
+  [& body]
+  (list 'tiny-tui.screen/with-inline-session* (list 'fn [] (cons 'do body))))
 
 (def ^:private confirm-bindings
   [{:key "↑/↓"
@@ -200,7 +229,9 @@
    into the query, so bind actions to control keys (e.g. :key :ctrl-d) for
    them to fire while filtering — plain-letter actions are shadowed.
    With :multi? space toggles a checkbox on the current row and enter returns
-   {:type :submit :items [...] :indices [...]} (see tui/multi-select)."
+   {:type :submit :items [...] :indices [...]} (see tui/multi-select).
+   To chain prompts or run one nested inside :on-action in a single raw-mode
+   span, wrap the flow in tui/with-inline-session (no per-widget :inline?)."
   [opts]
   (let [result (run {:init {:mode :list
                             :list (tlist/create opts)
@@ -222,7 +253,7 @@
   "Show a checkbox list (space toggles, enter submits) and return the vector
    of chosen items in list order — nil on cancel (esc/Ctrl-C/end of input),
    or [] on an empty submit. Takes the same opts as select (including
-   :filterable?, which composes)."
+   :filterable?, which composes, and tui/with-inline-session for chained flows)."
   [opts]
   (let [result (select (assoc opts :multi? true))]
     (if (= :submit (:type result))
@@ -234,7 +265,8 @@
    Ctrl-C, end of input) returns false.
    opts: :title, :message, :confirm-label, :cancel-label (see
    tiny-tui.confirm/create), :inline? (render in place, erasing on exit —
-   see run), plus the run testing hooks."
+   see run; or wrap a chained/nested flow in tui/with-inline-session), plus
+   the run testing hooks."
   [opts]
   (let [result (run {:init {:confirm (tconfirm/create opts)}
                      :update (fn [state msg]
@@ -289,7 +321,8 @@
    is expected to be total (return [] rather than throw).
    opts: :title, :placeholder, :value, :validate (fn text -> error-string
    or nil; see tiny-tui.input/create), :suggest-fn, :inline? (render in place,
-   erasing on exit — see run), plus the run testing hooks."
+   erasing on exit — see run; or wrap a chained/nested flow in
+   tui/with-inline-session), plus the run testing hooks."
   [opts]
   (let [suggest-fn (:suggest-fn opts)
         base (tinput/create opts)

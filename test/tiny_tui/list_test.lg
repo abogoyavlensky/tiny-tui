@@ -333,6 +333,25 @@
     ;; "a" (substring) matches Apple(0), banana(1), apricot(3)
     (is (= [0 1 3] (:filtered l)))))
 
+(deftest test-filter-backspace-word-drops-trailing-query-word
+  (let [base (make-filterable {})
+        l (assoc base :query "foo bar")]
+    ;; :backspace-word drops the trailing word "bar", leaving "foo ", and
+    ;; refilters (identical to refilter of the trimmed query)
+    (is (= (tlist/refilter (assoc base :query "foo "))
+           (first (tlist/update l :backspace-word))))
+    (is (nil? (second (tlist/update l :backspace-word))))
+    ;; :ctrl-w behaves identically
+    (is (= "foo " (:query (first (tlist/update l :ctrl-w)))))
+    ;; a trailing separator is consumed with the word before it
+    (is (= "foo " (:query (first (tlist/update (assoc base :query "foo bar-")
+                                               :backspace-word))))))
+  ;; an empty query is a no-op that still returns a nil event
+  (let [l (make-filterable {})
+        r (tlist/update l :backspace-word)]
+    (is (= "" (:query (first r))))
+    (is (nil? (second r)))))
+
 (deftest test-filterable-enter-selects-original-index
   ;; narrow to "rr" -> Cherry(2), Blueberry(4); enter picks the first match
   (let [l (type-in (make-filterable {}) ["r" "r"])
@@ -510,6 +529,27 @@
                          :actions [{:id :pick
                                     :key :enter
                                     :label "pick"}
+                                   {:id :delete
+                                    :key :ctrl-d
+                                    :label "delete"}]})]
+    (is (= [{:key "↑/↓"
+             :label "navigate"}
+            {:key "enter"
+             :label "select"}
+            {:key "^d"
+             :label "delete"}
+            {:key "esc"
+             :label "cancel"}]
+           (tlist/bindings l)))))
+
+(deftest test-bindings-filterable-hides-word-delete-key-actions
+  ;; :ctrl-w / :backspace-word are consumed by the filter's word-delete, so an
+  ;; action bound to them can't fire while filtering and must not be advertised
+  (let [l (tlist/create {:items fruits
+                         :filterable? true
+                         :actions [{:id :wipe
+                                    :key :ctrl-w
+                                    :label "wipe"}
                                    {:id :delete
                                     :key :ctrl-d
                                     :label "delete"}]})]

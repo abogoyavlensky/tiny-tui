@@ -37,3 +37,30 @@
   (is (= "q" (key/parse "q")))
   (is (= "d" (key/parse "d")))
   (is (= " " (key/parse " "))))
+
+(deftest test-parse-word-motion-csi
+  ;; Ctrl+Arrow (…;5…) and Option/Alt+Arrow (…;3…) both mean word motion.
+  (is (= :word-left (key/parse (str ESC "[1;3D"))))
+  (is (= :word-left (key/parse (str ESC "[1;5D"))))
+  (is (= :word-right (key/parse (str ESC "[1;3C"))))
+  (is (= :word-right (key/parse (str ESC "[1;5C"))))
+  ;; Alt+Delete (…;3…) and Ctrl+Delete (…;5…) both delete a word forward.
+  (is (= :delete-word (key/parse (str ESC "[3;3~"))))
+  (is (= :delete-word (key/parse (str ESC "[3;5~")))))
+
+(deftest test-parse-alt-chords
+  ;; parse-alt takes the *inner* token that followed a same-burst ESC and
+  ;; maps the Alt chord to a word message (macOS Option keys, mainly).
+  (is (= :word-left (key/parse-alt "b")))          ; Option+Left  -> ESC b
+  (is (= :word-right (key/parse-alt "f")))         ; Option+Right -> ESC f
+  (is (= :delete-word (key/parse-alt "d")))        ; Alt+d
+  (is (= :backspace-word (key/parse-alt (str (char 127)))))  ; Option+Backspace -> ESC DEL
+  ;; Alt + a CSI arrow (ESC ESC [ D) -> word motion
+  (is (= :word-left (key/parse-alt (str ESC "[D"))))
+  (is (= :word-right (key/parse-alt (str ESC "[C"))))
+  ;; Alt+Esc collapses back to a plain :esc (never cancels via a stray chord)
+  (is (= :esc (key/parse-alt ESC)))
+  ;; any other Alt+printable is an inert :alt-<char>, never :esc
+  (is (= :alt-x (key/parse-alt "x")))
+  ;; Alt + an unmapped special key falls through to the inner parse
+  (is (= :enter (key/parse-alt (str (char 13))))))

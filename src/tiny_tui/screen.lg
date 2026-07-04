@@ -173,3 +173,65 @@
    even when an exception escapes."
   [& body]
   (list 'tiny-tui.screen/with-inline-screen* (list 'fn [] (cons 'do body))))
+
+;; --- Inline session ------------------------------------------------------
+;; One raw-mode span shared by a whole flow of inline widgets, instead of each
+;; widget entering/leaving raw mode on its own. run consults session? to render
+;; a widget in place (and erase it on exit) without owning the terminal itself,
+;; so chained prompts — and prompts nested inside an :on-action handler — don't
+;; each toggle cursor/mode. Ordered bottom-up like the rest of the file.
+
+;; Private: true while an inline session owns the terminal.
+(def ^:private session-active? (atom false))
+
+(defn session?
+  "True when an inline session (see with-inline-session) owns the terminal.
+   run reads this to render a widget inline without its own raw-mode span."
+  []
+  @session-active?)
+
+(defn erase-widget!
+  "Erase the current inline widget's frame. Each inline frame leaves the cursor
+   at its own top-left, so a clear-below wipes the widget and a carriage-return
+   holds column 0 — the same trick shutdown-inline! uses, but without ending
+   the session, so the next widget renders where this one sat."
+  []
+  (term/write (str clear-below "\r"))
+  (term/flush))
+
+(defn with-inline-session*
+  "Run thunk `f` inside one inline session: a single raw-mode span that a whole
+   flow of inline widgets shares. A nested with-inline-session* just runs `f`
+   (the outer session already owns the terminal). Otherwise mark the session
+   active, init-inline! (unset the flag and rethrow if init throws), run `f`,
+   then unset the flag and shutdown-inline!. Uses the same capture/cleanup/
+   rethrow pattern as with-inline-screen* to dodge the let-go try/finally
+   quirks."
+  [f]
+  (if (session?)
+    (f)
+    (do
+      (reset! session-active? true)
+      ;; init-inline! restores the terminal itself if it throws after raw mode;
+      ;; we still clear the session flag before letting the error propagate.
+      (let [init (try [:ok (init-inline!)] (catch e [:err e]))]
+        (if (= :err (first init))
+          (do (reset! session-active? false)
+              (throw (second init)))
+          (let [result (try [:ok (f)] (catch e [:err e]))]
+            (reset! session-active? false)
+            (shutdown-inline!)
+            (if (= :ok (first result))
+              (second result)
+              (throw (second result)))))))))
+
+(defmacro with-inline-session
+  "Run `body` in one inline session (see with-inline-session*): a shared
+   raw-mode span for chained or nested inline widgets, with guaranteed cleanup
+   even when an exception escapes.
+
+   Gotcha: println inside a session runs in raw mode, so a bare \\n won't return
+   the carriage. Print results after the session — the widgets erase themselves
+   anyway."
+  [& body]
+  (list 'tiny-tui.screen/with-inline-session* (list 'fn [] (cons 'do body))))

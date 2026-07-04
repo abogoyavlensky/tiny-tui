@@ -66,6 +66,53 @@
 (defn- move [s cursor]
   (assoc s :cursor (max 0 (min (count (:text s)) cursor)) :error nil))
 
+(defn- word-char-at? [text i]
+  ;; A word char is an ASCII letter or digit. Non-ASCII letters count as
+  ;; separators — an accepted v1 limitation, so "/foo/bar-baz" jumps per path
+  ;; segment (matching macOS text fields); Unicode-aware boundaries are a
+  ;; follow-up.
+  (let [c (int (first (seq (subs text i (inc i)))))]
+    (or (<= 48 c 57) (<= 65 c 90) (<= 97 c 122))))
+
+(defn- prev-word-start [text pos]
+  ;; Walk left from pos: skip trailing separators, then the word chars before
+  ;; them, returning the index where the previous word begins.
+  (let [after-seps (loop [i pos]
+                     (if (and (pos? i) (not (word-char-at? text (dec i))))
+                       (recur (dec i))
+                       i))]
+    (loop [i after-seps]
+      (if (and (pos? i) (word-char-at? text (dec i)))
+        (recur (dec i))
+        i))))
+
+(defn- next-word-end [text pos]
+  ;; Walk right from pos: skip leading separators, then the word chars after
+  ;; them, returning the index just past the next word.
+  (let [len (count text)
+        after-seps (loop [i pos]
+                     (if (and (< i len) (not (word-char-at? text i)))
+                       (recur (inc i))
+                       i))]
+    (loop [i after-seps]
+      (if (and (< i len) (word-char-at? text i))
+        (recur (inc i))
+        i))))
+
+(defn- delete-region [s start end]
+  ;; Drop text[start,end), leaving the cursor at start and clearing :error.
+  (let [text (:text s)]
+    (assoc s
+           :text (str (subs text 0 start) (subs text end))
+           :cursor start
+           :error nil)))
+
+(defn- backspace-word [s]
+  (delete-region s (prev-word-start (:text s) (:cursor s)) (:cursor s)))
+
+(defn- delete-word [s]
+  (delete-region s (:cursor s) (next-word-end (:text s) (:cursor s))))
+
 (defn- submit [s]
   ;; Run :validate (when set) on the current text. A non-nil result blocks
   ;; submit and becomes the inline error; nil emits the :submit event.
@@ -94,17 +141,25 @@
 
 (defn update
   "Returns [new-state event]. Printable strings insert at the cursor;
-   :backspace/:delete edit; :left/:right/:home/:end move the caret;
-   :up/:down move the suggestion highlight (a no-op without suggestions);
-   :tab accepts the highlighted suggestion; :enter submits (subject to
-   :validate); :esc cancels. Editing, motion, and tab-accept emit no event."
+   :backspace/:delete edit; :backspace-word/:ctrl-w delete the word before the
+   caret and :delete-word the word after it; :left/:right/:home/:end move the
+   caret and :word-left/:word-right jump by a word (ASCII letters/digits are
+   word chars, so path segments count); :up/:down move the suggestion highlight
+   (a no-op without suggestions); :tab accepts the highlighted suggestion;
+   :enter submits (subject to :validate); :esc cancels. Editing, motion, and
+   tab-accept emit no event."
   [s msg]
   (cond
     (string? msg) [(insert s msg) nil]
     (= msg :backspace) [(backspace s) nil]
     (= msg :delete) [(delete-forward s) nil]
+    (= msg :backspace-word) [(backspace-word s) nil]
+    (= msg :ctrl-w) [(backspace-word s) nil]
+    (= msg :delete-word) [(delete-word s) nil]
     (= msg :left) [(move s (dec (:cursor s))) nil]
     (= msg :right) [(move s (inc (:cursor s))) nil]
+    (= msg :word-left) [(move s (prev-word-start (:text s) (:cursor s))) nil]
+    (= msg :word-right) [(move s (next-word-end (:text s) (:cursor s))) nil]
     (= msg :home) [(move s 0) nil]
     (= msg :end) [(move s (count (:text s))) nil]
     (= msg :down) [(move-suggestion s 1) nil]

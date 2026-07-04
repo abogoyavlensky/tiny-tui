@@ -30,7 +30,19 @@ Key bytes:
 | enter | `\r` |
 | esc | `\033` |
 | Ctrl-C | `\003` |
+| word left / right (macOS Option) | `\033b` / `\033f` |
+| word left / right (CSI: Alt / Ctrl + arrow) | `\033[1;3D` `\033[1;5D` / `\033[1;3C` `\033[1;5C` |
+| delete word (Alt+d / Ctrl+Delete) | `\033d` / `\033[3;5~` |
+| backspace word (Option+Backspace / Ctrl-W) | `\033\177` / `\027` |
 | printable (`q`, `d`, `y`, `n`) | the character itself |
+
+An `ESC` immediately followed by another byte in the same `printf` is read as
+an Alt/Option chord (that's how Option+Left etc. work), *not* as a lone esc. So
+to test that esc cancels, either end the `printf` at `\033` (nothing pending)
+or split the following key into a later `printf` after a short `sleep`.
+Likewise, gate the whole keystroke stream behind a leading `sleep` so raw mode
+is active before any byte arrives (a raw `\177` sent in cooked mode line-erases
+instead).
 
 Example: drive the deps demo down one row, press `d`, confirm with `y`:
 
@@ -76,6 +88,29 @@ sat. Assert the alternate screen is never touched:
 printf '\033[B\r' | timeout 15 script -qec "lgx run examples/inline_select.lg" /dev/null \
   | grep -a -c "$(printf '\033')\[?1049h"   # expect 0
 ```
+
+#### Inline sessions
+
+`tui/with-inline-session` runs a whole flow of widgets in one raw-mode span, so
+the terminal is taken over once for the flow rather than once per widget. A
+healthy session run (`examples/inline_flow.lg`) shows exactly **one**
+`ESC[?25l` / `ESC[?25h` pair around the entire flow (count each — more than one
+means a widget entered raw mode on its own), still **zero** `ESC[?1049h`, and a
+`clear-below` (`ESC[J`) as each widget erases before the next renders in its
+place. The final `println` lands where the widgets sat.
+
+```bash
+raw=$({ sleep 1.3; printf 'r!\r\ry'; sleep 0.5; } \
+       | timeout 20 script -qec "lgx run examples/inline_flow.lg" /dev/null)
+printf '%s' "$raw" | grep -a -c "$(printf '\033')\[?25l"    # expect 1 (hide once)
+printf '%s' "$raw" | grep -a -c "$(printf '\033')\[?25h"    # expect 1 (show once)
+printf '%s' "$raw" | grep -a -c "$(printf '\033')\[?1049"   # expect 0
+```
+
+Also verify the cancel paths (esc inside the nested prompt leaves the outer
+select running; q / Ctrl-C at each stage) and the throwing path — a handler
+that throws inside the session must still emit `ESC[?25h` and restore cooked
+mode before the error surfaces, exactly like `with-screen`.
 
 ## Gotchas learned while building V1
 

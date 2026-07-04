@@ -102,6 +102,70 @@
 (deftest test-esc-cancels
   (is (= {:type :cancel} (second (tinput/update (tinput/create {:value "hi"}) :esc)))))
 
+(deftest test-word-left
+  ;; cursor starts at end; word-left jumps to the previous word start
+  (let [s (tinput/create {:value "foo bar"})]
+    (is (= 4 (:cursor (first (tinput/update s :word-left)))))
+    (is (= 0 (:cursor (ups s [:word-left :word-left]))))
+    ;; already at the start -> stays put
+    (is (= 0 (:cursor (ups s [:word-left :word-left :word-left])))))
+  ;; path segments: letters/digits are word chars, so "/" separates
+  (let [s (tinput/create {:value ".agents/skills"})]
+    ;; from the end (14) -> start of "skills" (8)
+    (is (= 8 (:cursor (first (tinput/update s :word-left)))))))
+
+(deftest test-word-right
+  ;; mirror of word-left, moving from home to successive word ends
+  (let [s (ups (tinput/create {:value "foo bar"}) [:home])]
+    (is (= 3 (:cursor (first (tinput/update s :word-right)))))
+    (is (= 7 (:cursor (ups s [:word-right :word-right]))))
+    ;; at the end -> stays put
+    (is (= 7 (:cursor (ups s [:word-right :word-right :word-right]))))))
+
+(deftest test-word-motion-returns-no-event
+  (let [s (tinput/create {:value "foo bar"})]
+    (is (nil? (second (tinput/update s :word-left))))
+    (is (nil? (second (tinput/update (ups s [:home]) :word-right))))))
+
+(deftest test-backspace-word
+  ;; delete from the previous word start to the cursor
+  (let [s (tinput/create {:value "foo bar"})
+        r (tinput/update s :backspace-word)]
+    (is (= "foo " (:text (first r))))
+    (is (= 4 (:cursor (first r))))
+    (is (nil? (second r))))
+  ;; a trailing separator is consumed together with the word before it
+  (let [s (tinput/create {:value "foo bar-"})
+        r (tinput/update s :backspace-word)]
+    (is (= "foo " (:text (first r))))
+    (is (= 4 (:cursor (first r)))))
+  ;; at the start -> no-op
+  (let [s (ups (tinput/create {:value "foo bar"}) [:home])
+        r (tinput/update s :backspace-word)]
+    (is (= "foo bar" (:text (first r))))
+    (is (= 0 (:cursor (first r)))))
+  ;; clears a pending :error
+  (let [s (assoc (tinput/create {:value "foo bar"}) :error "required")]
+    (is (nil? (:error (first (tinput/update s :backspace-word)))))))
+
+(deftest test-ctrl-w-is-backspace-word
+  (let [s (tinput/create {:value "foo bar"})]
+    (is (= (first (tinput/update s :backspace-word))
+           (first (tinput/update s :ctrl-w))))))
+
+(deftest test-delete-word
+  ;; delete from the cursor forward to the next word end
+  (let [s (ups (tinput/create {:value "foo bar"}) [:home])
+        r (tinput/update s :delete-word)]
+    (is (= " bar" (:text (first r))))
+    (is (= 0 (:cursor (first r))))
+    (is (nil? (second r))))
+  ;; at the end -> no-op
+  (let [s (tinput/create {:value "foo bar"})
+        r (tinput/update s :delete-word)]
+    (is (= "foo bar" (:text (first r))))
+    (is (= 7 (:cursor (first r))))))
+
 (deftest test-create-suggestion-defaults
   (let [s (tinput/create {})]
     (is (= [] (:suggestions s)))
